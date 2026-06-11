@@ -122,6 +122,12 @@ Imports upsert by `match_id` / `external_match_id`. They do not delete manually 
 - Predictions submitted after kickoff or lock are ignored
 - Matches without final scores are ignored
 
+## Public Picks
+
+The `/predictions` page shows every player's pick for each match. Picks are hidden until the match is closed by kickoff time or by the admin lock, so players cannot copy each other before the deadline.
+
+For stronger protection, run `supabase/lock-predictions-hardening.sql` once in Supabase SQL Editor. This adds database triggers that reject prediction inserts or edits after kickoff or after the admin lock is turned on.
+
 ## Admin Flow
 
 1. Open `/admin`.
@@ -131,6 +137,8 @@ Imports upsert by `match_id` / `external_match_id`. They do not delete manually 
 5. Lock matches manually if needed.
 6. Enter final scores and set status to `finished`.
 7. Open `/leaderboard` to refresh rankings.
+
+The manual lock is not the only thing that closes predictions. A match also closes automatically after its kickoff time. If you click Unlock and predictions are still closed, edit the match kickoff time to a future time.
 
 ## Sharing
 
