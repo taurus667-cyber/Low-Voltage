@@ -124,7 +124,9 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       return;
     }
 
-    const sameName = players.filter((item) => item.name.toLowerCase() === cleanName.toLowerCase());
+    const sameName = players.filter(
+      (item) => isPlayerActive(item) && normalizePlayerName(item.name) === normalizePlayerName(cleanName),
+    );
     if (sameName.length && mode === 'auto') {
       setMatches(sameName);
       return;
@@ -143,7 +145,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       const token = crypto.randomUUID();
       const { data, error } = await supabase
         .from('players')
-        .insert({ name: cleanName, player_token: token })
+        .insert({ name: cleanName, player_token: token, is_active: true })
         .select()
         .single();
       throwIfError(error);
@@ -152,6 +154,11 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       setMessage(`Welcome, ${data.name}.`);
       navigate('/matches');
     } catch (err) {
+      if (isUniqueViolation(err)) {
+        setError('That display name is already registered. Use the existing profile.');
+        await refresh();
+        return;
+      }
       setError(err.message || 'Could not save player.');
     }
   };
@@ -188,13 +195,12 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
         {matches.length > 0 && (
           <div className="duplicate-box">
             <strong>Name already exists.</strong>
-            <span>Use an existing profile or create a slightly different name.</span>
+            <span>Use the existing profile for this display name.</span>
             {matches.map((item) => (
               <button key={item.id} onClick={() => savePlayer(`existing:${item.id}`)}>
                 Use {item.name}
               </button>
             ))}
-            <button onClick={() => savePlayer('new')}>Create a new {name.trim()}</button>
           </div>
         )}
       </div>
@@ -202,18 +208,22 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
   );
 }
 
-function MatchesPage({ player, matches, predictions, refresh, loading, setMessage, setError, navigate }) {
+function MatchesPage({ player, players, matches, predictions, refresh, loading, setMessage, setError, navigate }) {
   const publishedMatches = matches.filter((match) => match.is_published);
+  const currentPlayer = players.find((item) => item.id === player?.id) || player;
   const predictionsByMatch = useMemo(() => {
     const map = new Map();
     predictions
-      .filter((prediction) => prediction.player_id === player?.id)
+      .filter((prediction) => prediction.player_id === currentPlayer?.id)
       .forEach((prediction) => map.set(prediction.match_id, prediction));
     return map;
-  }, [predictions, player]);
+  }, [predictions, currentPlayer]);
 
-  if (!player) {
+  if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
+  }
+  if (!isPlayerActive(currentPlayer)) {
+    return <InactivePlayer navigate={navigate} />;
   }
 
   return (
@@ -226,7 +236,7 @@ function MatchesPage({ player, matches, predictions, refresh, loading, setMessag
             key={match.id}
             match={match}
             prediction={predictionsByMatch.get(match.id)}
-            player={player}
+            player={currentPlayer}
             refresh={refresh}
             setMessage={setMessage}
             setError={setError}
@@ -379,8 +389,8 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
     });
     map.forEach((rows) => {
       rows.sort((a, b) => {
-        const playerA = playersById.get(a.player_id)?.name || '';
-        const playerB = playersById.get(b.player_id)?.name || '';
+        const playerA = getPlayerDisplayName(playersById.get(a.player_id));
+        const playerB = getPlayerDisplayName(playersById.get(b.player_id));
         return playerA.localeCompare(playerB);
       });
     });
@@ -426,7 +436,7 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
                     <tbody>
                       {matchPredictions.map((prediction) => (
                         <tr key={prediction.id}>
-                          <td>{playersById.get(prediction.player_id)?.name || 'Unknown player'}</td>
+                          <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
                           <td>
                             {prediction.predicted_team_a_score} - {prediction.predicted_team_b_score}
                           </td>
@@ -734,6 +744,16 @@ function NeedPlayer({ navigate }) {
   );
 }
 
+function InactivePlayer({ navigate }) {
+  return (
+    <div className="panel centered">
+      <h1>Profile inactive</h1>
+      <p className="muted">This duplicate profile was deactivated. Use the active profile for this display name.</p>
+      <button className="primary" onClick={() => navigate('/')}>Go to welcome page</button>
+    </div>
+  );
+}
+
 function EmptyState({ text }) {
   return <p className="empty">{text}</p>;
 }
@@ -802,6 +822,23 @@ function toLocalInputValue(value) {
 
 function throwIfError(error) {
   if (error) throw error;
+}
+
+function normalizePlayerName(value) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isPlayerActive(player) {
+  return player?.is_active !== false;
+}
+
+function getPlayerDisplayName(player) {
+  if (!player) return 'Unknown player';
+  return isPlayerActive(player) ? player.name : `${player.name} (inactive)`;
+}
+
+function isUniqueViolation(error) {
+  return error?.code === '23505' || /duplicate key|unique/i.test(error?.message || '');
 }
 
 createRoot(document.getElementById('root')).render(<App />);

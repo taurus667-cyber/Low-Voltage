@@ -4,8 +4,28 @@ create table if not exists public.players (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   player_token text not null unique,
+  is_active boolean not null default true,
+  deactivated_at timestamp with time zone,
+  deactivation_reason text,
   created_at timestamp with time zone default now()
 );
+
+alter table public.players add column if not exists is_active boolean not null default true;
+alter table public.players add column if not exists deactivated_at timestamp with time zone;
+alter table public.players add column if not exists deactivation_reason text;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'players_name_not_blank'
+      and conrelid = 'public.players'::regclass
+  ) then
+    alter table public.players add constraint players_name_not_blank check (btrim(name) <> '') not valid;
+  end if;
+end;
+$$;
+alter table public.players validate constraint players_name_not_blank;
 
 create table if not exists public.matches (
   id uuid primary key default gen_random_uuid(),
@@ -38,6 +58,9 @@ create table if not exists public.predictions (
 );
 
 create index if not exists idx_players_name on public.players (lower(name));
+create unique index if not exists idx_players_active_name_unique
+on public.players (lower(regexp_replace(btrim(name), '\s+', ' ', 'g')))
+where is_active = true;
 create index if not exists idx_matches_kickoff_time on public.matches (kickoff_time);
 create index if not exists idx_matches_published on public.matches (is_published);
 create index if not exists idx_matches_external_match_id on public.matches (external_match_id);
@@ -59,6 +82,15 @@ returns trigger
 language plpgsql
 as $$
 begin
+  if not exists (
+    select 1
+    from public.players
+    where players.id = new.player_id
+      and players.is_active = true
+  ) then
+    raise exception 'Predictions cannot be changed for inactive players.';
+  end if;
+
   if exists (
     select 1
     from public.matches
@@ -125,6 +157,12 @@ create policy "predictions_insert_before_kickoff" on public.predictions
 for insert
 with check (
   exists (
+    select 1 from public.players
+    where players.id = predictions.player_id
+      and players.is_active = true
+  )
+  and
+  exists (
     select 1 from public.matches
     where matches.id = predictions.match_id
       and matches.is_locked = false
@@ -144,6 +182,12 @@ using (
   )
 )
 with check (
+  exists (
+    select 1 from public.players
+    where players.id = predictions.player_id
+      and players.is_active = true
+  )
+  and
   exists (
     select 1 from public.matches
     where matches.id = predictions.match_id

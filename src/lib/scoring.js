@@ -24,8 +24,9 @@ export function predictionPoints(prediction, match) {
 
 export function calculateLeaderboard(players, matches, predictions) {
   const matchMap = new Map(matches.map((match) => [match.id, match]));
+  const activePlayers = players.filter((player) => player.is_active !== false);
   const rows = new Map(
-    players.map((player) => [
+    activePlayers.map((player) => [
       player.id,
       {
         player_id: player.id,
