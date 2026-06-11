@@ -1,0 +1,4 @@
+match_id,stage,group_name,team_a,team_b,kickoff_time,venue
+wc2026-sample-001,Group Stage,Group A,Mexico,South Africa,2026-06-11T19:00:00Z,"Estadio Azteca, Mexico City"
+wc2026-sample-002,Group Stage,Group B,United States,Canada,2026-06-12T00:00:00Z,"SoFi Stadium, Los Angeles"
+wc2026-sample-003,Group Stage,Group C,Brazil,Japan,2026-06-13T22:00:00Z,"MetLife Stadium, New Jersey"
