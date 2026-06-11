@@ -80,6 +80,9 @@ function App() {
           <button className={route === '/matches' ? 'active' : ''} onClick={() => navigate('/matches')}>
             Matches
           </button>
+          <button className={route === '/predictions' ? 'active' : ''} onClick={() => navigate('/predictions')}>
+            Picks
+          </button>
           <button className={route === '/leaderboard' ? 'active' : ''} onClick={() => navigate('/leaderboard')}>
             Leaderboard
           </button>
@@ -100,6 +103,7 @@ function App() {
       <main>
         {route === '/' && <HomePage {...pageProps} />}
         {route === '/matches' && <MatchesPage {...pageProps} />}
+        {route === '/predictions' && <PredictionsPage {...pageProps} />}
         {route === '/leaderboard' && <LeaderboardPage {...pageProps} />}
         {route === '/admin' && <AdminPage {...pageProps} />}
       </main>
@@ -238,6 +242,7 @@ function PredictionCard({ match, prediction, player, refresh, setMessage, setErr
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
   const locked = isMatchLocked(match);
+  const lockReason = getMatchLockReason(match);
   const hasResult = isFinalScoreComplete(match);
 
   useEffect(() => {
@@ -322,7 +327,7 @@ function PredictionCard({ match, prediction, player, refresh, setMessage, setErr
       <button className="primary" onClick={submit} disabled={locked}>
         {prediction ? 'Update prediction' : 'Submit prediction'}
       </button>
-      {locked && <p className="lock-note">Locked after kickoff or by admin.</p>}
+      {locked && <p className="lock-note">{lockReason}</p>}
     </article>
   );
 }
@@ -359,6 +364,87 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
         </table>
       </div>
       {!rows.length && <EmptyState text="Leaderboard will appear after players submit predictions and results are entered." />}
+    </section>
+  );
+}
+
+function PredictionsPage({ players, matches, predictions, refresh }) {
+  const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const predictionsByMatch = useMemo(() => {
+    const map = new Map();
+    predictions.forEach((prediction) => {
+      const rows = map.get(prediction.match_id) || [];
+      rows.push(prediction);
+      map.set(prediction.match_id, rows);
+    });
+    map.forEach((rows) => {
+      rows.sort((a, b) => {
+        const playerA = playersById.get(a.player_id)?.name || '';
+        const playerB = playersById.get(b.player_id)?.name || '';
+        return playerA.localeCompare(playerB);
+      });
+    });
+    return map;
+  }, [predictions, playersById]);
+
+  const publishedMatches = matches.filter((match) => match.is_published);
+
+  return (
+    <section>
+      <PageTitle title="Picks" action={<button onClick={refresh}>Refresh</button>} />
+      <div className="match-list">
+        {publishedMatches.map((match) => {
+          const matchPredictions = predictionsByMatch.get(match.id) || [];
+          const canReveal = isMatchLocked(match);
+          return (
+            <article className="match-card" key={match.id}>
+              <div className="match-meta">
+                <span>{match.stage || 'Match'}</span>
+                {match.group_name && <span>{match.group_name}</span>}
+                <span>{formatDate(match.kickoff_time)}</span>
+              </div>
+              <div className="teams">
+                <strong>{match.team_a}</strong>
+                <span>vs</span>
+                <strong>{match.team_b}</strong>
+              </div>
+              {!canReveal && (
+                <p className="muted">
+                  Picks will be visible after kickoff or when the admin locks this match.
+                </p>
+              )}
+              {canReveal && matchPredictions.length > 0 && (
+                <div className="table-wrap compact-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Pick</th>
+                        <th>Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matchPredictions.map((prediction) => (
+                        <tr key={prediction.id}>
+                          <td>{playersById.get(prediction.player_id)?.name || 'Unknown player'}</td>
+                          <td>
+                            {prediction.predicted_team_a_score} - {prediction.predicted_team_b_score}
+                          </td>
+                          <td>{formatDate(prediction.submitted_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {canReveal && matchPredictions.length === 0 && (
+                <p className="muted">No picks submitted for this match yet.</p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+      {!publishedMatches.length && <EmptyState text="No published matches yet." />}
     </section>
   );
 }
@@ -496,9 +582,15 @@ function AdminTools({ matches, refresh, setMessage, setError }) {
     setMessage('');
     setError('');
     try {
-      const { error } = await supabase.from('matches').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+      const { data, error } = await supabase
+        .from('matches')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
       throwIfError(error);
-      setMessage('Match updated.');
+      const lockReason = patch.is_locked === false ? getMatchLockReason(data) : '';
+      setMessage(lockReason ? `Manual lock removed. ${lockReason}` : 'Match updated.');
       await refresh();
     } catch (err) {
       setError(err.message || 'Could not update match.');
@@ -596,9 +688,10 @@ function AdminTools({ matches, refresh, setMessage, setError }) {
               <strong>{match.team_a} vs {match.team_b}</strong>
               <p>{formatDate(match.kickoff_time)} · {match.stage || 'Match'} {match.group_name ? `· ${match.group_name}` : ''}</p>
               <p>
-                {match.status} · {match.is_published ? 'published' : 'hidden'} · {match.is_locked ? 'locked' : 'open'}
+                {match.status} · {match.is_published ? 'published' : 'hidden'} · manual lock {match.is_locked ? 'on' : 'off'}
                 {isFinalScoreComplete(match) ? ` · final ${match.team_a_score}-${match.team_b_score}` : ''}
               </p>
+              <p>{getMatchLockReason(match) || 'Predictions are open.'}</p>
             </div>
             <div className="admin-actions">
               <button onClick={() => edit(match)}>Edit</button>
@@ -648,7 +741,7 @@ function EmptyState({ text }) {
 function useRoute() {
   const normalize = () => {
     const path = window.location.pathname;
-    return ['/', '/matches', '/leaderboard', '/admin'].includes(path) ? path : '/';
+    return ['/', '/matches', '/predictions', '/leaderboard', '/admin'].includes(path) ? path : '/';
   };
   const [route, setRoute] = useState(normalize);
   useEffect(() => {
@@ -677,6 +770,14 @@ function useStoredPlayer() {
 
 function isMatchLocked(match) {
   return Boolean(match.is_locked) || new Date(match.kickoff_time).getTime() <= Date.now();
+}
+
+function getMatchLockReason(match) {
+  if (match.is_locked) return 'Predictions are closed because the admin lock is on.';
+  if (new Date(match.kickoff_time).getTime() <= Date.now()) {
+    return 'Predictions are closed because kickoff time has passed. Edit the kickoff time to reopen it.';
+  }
+  return '';
 }
 
 function parseScore(value) {

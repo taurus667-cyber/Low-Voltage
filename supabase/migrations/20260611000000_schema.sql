@@ -54,6 +54,27 @@ begin
 end;
 $$;
 
+create or replace function public.prevent_closed_match_prediction_changes()
+returns trigger
+language plpgsql
+as $$
+begin
+  if exists (
+    select 1
+    from public.matches
+    where matches.id = new.match_id
+      and (
+        matches.is_locked = true
+        or matches.kickoff_time <= now()
+      )
+  ) then
+    raise exception 'Predictions cannot be changed after the match is locked or kickoff time has passed.';
+  end if;
+
+  return new;
+end;
+$$;
+
 drop trigger if exists set_matches_updated_at on public.matches;
 create trigger set_matches_updated_at
 before update on public.matches
@@ -63,6 +84,16 @@ drop trigger if exists set_predictions_updated_at on public.predictions;
 create trigger set_predictions_updated_at
 before update on public.predictions
 for each row execute function public.set_updated_at();
+
+drop trigger if exists prevent_closed_match_prediction_inserts on public.predictions;
+create trigger prevent_closed_match_prediction_inserts
+before insert on public.predictions
+for each row execute function public.prevent_closed_match_prediction_changes();
+
+drop trigger if exists prevent_closed_match_prediction_updates on public.predictions;
+create trigger prevent_closed_match_prediction_updates
+before update on public.predictions
+for each row execute function public.prevent_closed_match_prediction_changes();
 
 alter table public.players enable row level security;
 alter table public.matches enable row level security;

@@ -368,11 +368,12 @@ th {
 
   nav {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 
   nav button {
     padding-inline: 0.35rem;
+    font-size: 0.86rem;
   }
 
   .hero,
