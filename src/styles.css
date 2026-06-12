@@ -215,6 +215,66 @@ h2 {
   gap: 1rem;
 }
 
+.picks-dashboard {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.picks-dashboard h2 {
+  margin: 0;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-item {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.85rem;
+}
+
+.dashboard-item div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.dashboard-item span {
+  color: #63766f;
+  font-size: 0.88rem;
+}
+
+.prediction-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.prediction-count strong {
+  color: #0f766e;
+  font-size: 1.7rem;
+}
+
+.progress-track {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e3eeea;
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+}
+
 .match-card {
   display: grid;
   gap: 0.9rem;

@@ -380,6 +380,10 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
 
 function PredictionsPage({ players, matches, predictions, refresh }) {
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
+  const activePlayerCount = useMemo(
+    () => players.filter((player) => isPlayerActive(player)).length,
+    [players],
+  );
   const predictionsByMatch = useMemo(() => {
     const map = new Map();
     predictions.forEach((prediction) => {
@@ -398,14 +402,51 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
   }, [predictions, playersById]);
 
   const publishedMatches = matches.filter((match) => match.is_published);
+  const participationRows = publishedMatches.map((match) => {
+    const matchPredictions = predictionsByMatch.get(match.id) || [];
+    const activePredictionCount = matchPredictions.filter((prediction) =>
+      isPlayerActive(playersById.get(prediction.player_id)),
+    ).length;
+    return {
+      match,
+      activePredictionCount,
+      totalActivePlayers: activePlayerCount,
+      percent: activePlayerCount ? Math.round((activePredictionCount / activePlayerCount) * 100) : 0,
+    };
+  });
 
   return (
     <section>
       <PageTitle title="Picks" action={<button onClick={refresh}>Refresh</button>} />
+      {publishedMatches.length > 0 && (
+        <div className="picks-dashboard">
+          <h2>Prediction Dashboard</h2>
+          <div className="dashboard-grid">
+            {participationRows.map(({ match, activePredictionCount, totalActivePlayers, percent }) => (
+              <article className="dashboard-item" key={match.id}>
+                <div>
+                  <strong>{match.team_a} vs {match.team_b}</strong>
+                  <span>{match.group_name || match.stage || 'Match'} · {formatDate(match.kickoff_time)}</span>
+                </div>
+                <div className="prediction-count">
+                  <strong>{activePredictionCount}</strong>
+                  <span>/ {totalActivePlayers} players</span>
+                </div>
+                <div className="progress-track" aria-label={`${percent}% submitted`}>
+                  <span style={{ width: `${percent}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="match-list">
         {publishedMatches.map((match) => {
           const matchPredictions = predictionsByMatch.get(match.id) || [];
           const canReveal = isMatchLocked(match);
+          const activeSubmittedCount = matchPredictions.filter((prediction) =>
+            isPlayerActive(playersById.get(prediction.player_id)),
+          ).length;
           return (
             <article className="match-card" key={match.id}>
               <div className="match-meta">
@@ -418,12 +459,13 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
                 <span>vs</span>
                 <strong>{match.team_b}</strong>
               </div>
+              <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
               {!canReveal && (
                 <p className="muted">
-                  Picks will be visible after kickoff or when the admin locks this match.
+                  Score picks stay hidden until kickoff or when the admin locks this match.
                 </p>
               )}
-              {canReveal && matchPredictions.length > 0 && (
+              {matchPredictions.length > 0 && (
                 <div className="table-wrap compact-table">
                   <table>
                     <thead>
@@ -438,7 +480,9 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
                         <tr key={prediction.id}>
                           <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
                           <td>
-                            {prediction.predicted_team_a_score} - {prediction.predicted_team_b_score}
+                            {canReveal
+                              ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
+                              : 'Hidden until kickoff'}
                           </td>
                           <td>{formatDate(prediction.submitted_at)}</td>
                         </tr>
@@ -447,7 +491,7 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
                   </table>
                 </div>
               )}
-              {canReveal && matchPredictions.length === 0 && (
+              {matchPredictions.length === 0 && (
                 <p className="muted">No picks submitted for this match yet.</p>
               )}
             </article>

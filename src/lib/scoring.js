@@ -42,10 +42,12 @@ export function calculateLeaderboard(players, matches, predictions) {
   predictions.forEach((prediction) => {
     const row = rows.get(prediction.player_id);
     const match = matchMap.get(prediction.match_id);
-    if (!row || !match || !isFinalScoreComplete(match)) return;
+    if (!row || !match) return;
     if (new Date(prediction.submitted_at).getTime() > new Date(match.kickoff_time).getTime()) return;
 
     row.predictions_submitted_count += 1;
+    if (!isFinalScoreComplete(match)) return;
+
     const points = predictionPoints(prediction, match);
     row.total_points += points;
     if (points === 3) row.exact_score_count += 1;
@@ -53,11 +55,11 @@ export function calculateLeaderboard(players, matches, predictions) {
   });
 
   return Array.from(rows.values())
-    .filter((row) => row.predictions_submitted_count > 0 || row.total_points > 0)
     .sort((a, b) =>
       b.total_points - a.total_points ||
       b.exact_score_count - a.exact_score_count ||
       b.correct_outcome_count - a.correct_outcome_count ||
+      b.predictions_submitted_count - a.predictions_submitted_count ||
       a.name.localeCompare(b.name),
     );
 }
