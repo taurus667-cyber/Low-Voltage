@@ -211,6 +211,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
 function MatchesPage({ player, players, matches, predictions, refresh, loading, setMessage, setError, navigate }) {
   const publishedMatches = matches.filter((match) => match.is_published);
   const currentPlayer = players.find((item) => item.id === player?.id) || player;
+  const playersById = useMemo(() => new Map(players.map((item) => [item.id, item])), [players]);
   const predictionsByMatch = useMemo(() => {
     const map = new Map();
     predictions
@@ -218,6 +219,24 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
       .forEach((prediction) => map.set(prediction.match_id, prediction));
     return map;
   }, [predictions, currentPlayer]);
+  const activePredictionsByMatch = useMemo(() => {
+    const map = new Map();
+    predictions.forEach((prediction) => {
+      const predictedPlayer = playersById.get(prediction.player_id);
+      if (!isPlayerActive(predictedPlayer)) return;
+      const rows = map.get(prediction.match_id) || [];
+      rows.push(prediction);
+      map.set(prediction.match_id, rows);
+    });
+    map.forEach((rows) => {
+      rows.sort((a, b) =>
+        getPlayerDisplayName(playersById.get(a.player_id)).localeCompare(
+          getPlayerDisplayName(playersById.get(b.player_id)),
+        ),
+      );
+    });
+    return map;
+  }, [predictions, playersById]);
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
@@ -236,6 +255,8 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
             key={match.id}
             match={match}
             prediction={predictionsByMatch.get(match.id)}
+            submittedPredictions={activePredictionsByMatch.get(match.id) || []}
+            playersById={playersById}
             player={currentPlayer}
             refresh={refresh}
             setMessage={setMessage}
@@ -248,7 +269,7 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
   );
 }
 
-function PredictionCard({ match, prediction, player, refresh, setMessage, setError }) {
+function PredictionCard({ match, prediction, submittedPredictions, playersById, player, refresh, setMessage, setError }) {
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
   const locked = isMatchLocked(match);
@@ -310,6 +331,23 @@ function PredictionCard({ match, prediction, player, refresh, setMessage, setErr
           Final: {match.team_a_score} - {match.team_b_score}
         </p>
       )}
+      <div className="submitted-panel">
+        <div className="submitted-header">
+          <strong>Submitted by</strong>
+          <span>{submittedPredictions.length} player{submittedPredictions.length === 1 ? '' : 's'}</span>
+        </div>
+        {submittedPredictions.length > 0 ? (
+          <div className="submitted-list">
+            {submittedPredictions.map((submittedPrediction) => (
+              <span key={submittedPrediction.id}>
+                {getPlayerDisplayName(playersById.get(submittedPrediction.player_id))}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">No players submitted a prediction yet.</p>
+        )}
+      </div>
       <div className="score-row">
         <label>
           {match.team_a}
