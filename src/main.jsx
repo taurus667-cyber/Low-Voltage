@@ -44,25 +44,19 @@ function App() {
     setError('');
     try {
       const [tournamentRows, playerRows, matchRows, predictionRows, eventRows, statisticRows, lineupRows, aidRows, oddsRows] = await Promise.all([
-        supabase.from('tournaments').select('*').order('created_at'),
+        optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
         supabase.from('players').select('*').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         supabase.from('predictions').select('*').order('submitted_at'),
-        supabase.from('match_events').select('*').order('elapsed'),
-        supabase.from('match_statistics').select('*'),
-        supabase.from('match_lineups').select('*'),
-        supabase.from('match_prediction_aids').select('*').order('aid_type'),
-        supabase.from('match_odds').select('*'),
+        optionalSelect(supabase.from('match_events').select('*').order('elapsed')),
+        optionalSelect(supabase.from('match_statistics').select('*')),
+        optionalSelect(supabase.from('match_lineups').select('*')),
+        optionalSelect(supabase.from('match_prediction_aids').select('*').order('aid_type')),
+        optionalSelect(supabase.from('match_odds').select('*')),
       ]);
-      throwIfError(tournamentRows.error);
       throwIfError(playerRows.error);
       throwIfError(matchRows.error);
       throwIfError(predictionRows.error);
-      throwIfError(eventRows.error);
-      throwIfError(statisticRows.error);
-      throwIfError(lineupRows.error);
-      throwIfError(aidRows.error);
-      throwIfError(oddsRows.error);
       setTournaments(tournamentRows.data || []);
       setPlayers(playerRows.data || []);
       setMatches(matchRows.data || []);
@@ -190,7 +184,12 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       const token = crypto.randomUUID();
       const { data, error } = await supabase
         .from('players')
-        .insert({ name: cleanName, player_token: token, is_active: true, tournament_id: tournament.id })
+        .insert({
+          name: cleanName,
+          player_token: token,
+          is_active: true,
+          ...(tournament.id ? { tournament_id: tournament.id } : {}),
+        })
         .select()
         .single();
       throwIfError(error);
@@ -466,7 +465,7 @@ function PredictionCard({
         {
           player_id: player.id,
           match_id: match.id,
-          tournament_id: match.tournament_id || tournament?.id || null,
+          ...((match.tournament_id || tournament?.id) ? { tournament_id: match.tournament_id || tournament.id } : {}),
           predicted_team_a_score: scoreA,
           predicted_team_b_score: scoreB,
           updated_at: new Date().toISOString(),
@@ -930,7 +929,7 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
     }
     try {
       const payload = {
-        tournament_id: form.tournament_id || tournament?.id || null,
+        ...((form.tournament_id || tournament?.id) ? { tournament_id: form.tournament_id || tournament.id } : {}),
         external_match_id: form.external_match_id.trim() || null,
         stage: form.stage.trim() || null,
         group_name: form.group_name.trim() || null,
@@ -1008,7 +1007,7 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
       }
       const fixtures = normalizeFixtureRows(rows).map((fixture) => ({
         ...fixture,
-        tournament_id: tournament?.id || null,
+        ...(tournament?.id ? { tournament_id: tournament.id } : {}),
       }));
       if (!fixtures.length) throw new Error('No valid fixtures found.');
       const { error } = await supabase.from('matches').upsert(fixtures, { onConflict: 'external_match_id' });
@@ -1216,6 +1215,19 @@ function toLocalInputValue(value) {
 
 function throwIfError(error) {
   if (error) throw error;
+}
+
+async function optionalSelect(query) {
+  const result = await query;
+  if (isMissingOptionalRelation(result.error)) return { data: [], error: null };
+  return result;
+}
+
+function isMissingOptionalRelation(error) {
+  if (!error) return false;
+  return error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    /could not find the table|schema cache|does not exist/i.test(error.message || '');
 }
 
 function normalizePlayerName(value) {
