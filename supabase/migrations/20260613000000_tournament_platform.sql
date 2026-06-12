@@ -25,12 +25,9 @@ alter table public.matches add column if not exists team_b_source_id text;
 
 update public.players set tournament_id = (select id from public.tournaments where is_active = true limit 1) where tournament_id is null;
 update public.matches set tournament_id = (select id from public.tournaments where is_active = true limit 1) where tournament_id is null;
-update public.predictions p
-set tournament_id = coalesce(
-  (select m.tournament_id from public.matches m where m.id = p.match_id),
-  (select id from public.tournaments where is_active = true limit 1)
-)
-where tournament_id is null;
+-- Leave legacy predictions with null tournament_id. Backfilling locked match
+-- predictions would trigger prevent_closed_match_prediction_changes(); the app
+-- treats null tournament_id predictions as part of the active tournament.
 
 create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
