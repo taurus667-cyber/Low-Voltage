@@ -30,9 +30,18 @@ Create a `.env` file locally and add the same variables in Vercel:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_ADMIN_PASSWORD=choose-a-private-group-admin-password
+VITE_TOURNAMENT_SLUG=world-cup-2026
+VITE_TOURNAMENT_NAME=FIFA World Cup 2026
+VITE_TOURNAMENT_BRANDING=Private friends group
+VITE_TOURNAMENT_TIMEZONE=UTC
+VITE_API_FOOTBALL_LEAGUE_ID=1
+VITE_API_FOOTBALL_SEASON=2026
 API_FOOTBALL_KEY=your-api-football-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 CRON_SECRET=choose-a-long-random-cron-secret
+TOURNAMENT_SLUG=world-cup-2026
+TOURNAMENT_NAME=FIFA World Cup 2026
+TOURNAMENT_TIMEZONE=UTC
 API_FOOTBALL_LEAGUE_ID=1
 API_FOOTBALL_SEASON=2026
 ```
@@ -75,9 +84,18 @@ supabase db push
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `VITE_ADMIN_PASSWORD`
+   - `VITE_TOURNAMENT_SLUG`
+   - `VITE_TOURNAMENT_NAME`
+   - `VITE_TOURNAMENT_BRANDING`
+   - `VITE_TOURNAMENT_TIMEZONE`
+   - `VITE_API_FOOTBALL_LEAGUE_ID`
+   - `VITE_API_FOOTBALL_SEASON`
    - `API_FOOTBALL_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `CRON_SECRET`
+   - `TOURNAMENT_SLUG`
+   - `TOURNAMENT_NAME`
+   - `TOURNAMENT_TIMEZONE`
    - `API_FOOTBALL_LEAGUE_ID`
    - `API_FOOTBALL_SEASON`
 5. Deploy.
@@ -89,6 +107,7 @@ vercel
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_ANON_KEY
 vercel env add VITE_ADMIN_PASSWORD
+vercel env add VITE_TOURNAMENT_NAME
 vercel env add API_FOOTBALL_KEY
 vercel env add SUPABASE_SERVICE_ROLE_KEY
 vercel env add CRON_SECRET
@@ -149,16 +168,13 @@ Imports upsert by `match_id` / `external_match_id`. They do not delete manually 
 
 The Matches page keeps active matches in a **Live now** section instead of moving them directly to Played after kickoff. A match is live when its status is `live`, or when kickoff has passed and it is still inside the live match window. Predictions still close at kickoff; live focus does not reopen picks.
 
-Live score syncing is handled by the server-only `/api/sync-live-scores` Vercel function. It uses API-Football as a free third-party source, writes cached live status into Supabase, and never exposes the API key or Supabase service role key to browser code.
+Live score syncing is handled by the server-only `/api/sync-live-scores` Vercel function. It uses API-Football as the server-side source, writes cached live status, events, statistics, and lineups into Supabase, and never exposes the API key or Supabase service role key to browser code.
 
-Vercel Hobby projects only allow cron jobs once per day, so the 5-minute trigger is handled by `.github/workflows/sync-live-scores.yml` or another external scheduler. Add these GitHub repository secrets after the production Vercel URL exists:
+On Vercel Pro, `vercel.json` runs live sync every 5 minutes and pre-match data sync every 6 hours. Pre-match sync stores prediction aids such as API prediction advice, head-to-head, injuries, and match winner odds.
 
-```bash
-LIVE_SYNC_URL=https://your-production-url
-CRON_SECRET=the-same-secret-used-in-vercel
-```
+To reuse this app for another API-Football tournament, create or activate a row in `tournaments` with the target league ID and season, update the tournament environment defaults, then bootstrap/import fixtures for that tournament.
 
-Run `supabase/migrations/20260612000000_live_score_fields.sql` before enabling live sync on an existing database.
+Run `supabase/migrations/20260612000000_live_score_fields.sql` and `supabase/migrations/20260613000000_tournament_platform.sql` before enabling live sync on an existing database.
 
 The source is displayed in the app as third-party data with a last-synced timestamp. Admin score/status edits remain available as the manual override.
 

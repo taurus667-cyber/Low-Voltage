@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
 import { calculateLeaderboard, isFinalScoreComplete } from './lib/scoring.js';
+import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
+import { getActiveTournament, scopedRows } from './lib/tournament.js';
 import {
   getLiveStatusLabel,
   getMatchLockReason,
@@ -26,6 +28,12 @@ function App() {
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [tournaments, setTournaments] = useState([]);
+  const [matchEvents, setMatchEvents] = useState([]);
+  const [matchStatistics, setMatchStatistics] = useState([]);
+  const [matchLineups, setMatchLineups] = useState([]);
+  const [predictionAids, setPredictionAids] = useState([]);
+  const [matchOdds, setMatchOdds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -35,17 +43,35 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const [playerRows, matchRows, predictionRows] = await Promise.all([
+      const [tournamentRows, playerRows, matchRows, predictionRows, eventRows, statisticRows, lineupRows, aidRows, oddsRows] = await Promise.all([
+        supabase.from('tournaments').select('*').order('created_at'),
         supabase.from('players').select('*').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         supabase.from('predictions').select('*').order('submitted_at'),
+        supabase.from('match_events').select('*').order('elapsed'),
+        supabase.from('match_statistics').select('*'),
+        supabase.from('match_lineups').select('*'),
+        supabase.from('match_prediction_aids').select('*').order('aid_type'),
+        supabase.from('match_odds').select('*'),
       ]);
+      throwIfError(tournamentRows.error);
       throwIfError(playerRows.error);
       throwIfError(matchRows.error);
       throwIfError(predictionRows.error);
+      throwIfError(eventRows.error);
+      throwIfError(statisticRows.error);
+      throwIfError(lineupRows.error);
+      throwIfError(aidRows.error);
+      throwIfError(oddsRows.error);
+      setTournaments(tournamentRows.data || []);
       setPlayers(playerRows.data || []);
       setMatches(matchRows.data || []);
       setPredictions(predictionRows.data || []);
+      setMatchEvents(eventRows.data || []);
+      setMatchStatistics(statisticRows.data || []);
+      setMatchLineups(lineupRows.data || []);
+      setPredictionAids(aidRows.data || []);
+      setMatchOdds(oddsRows.data || []);
     } catch (err) {
       setError(err.message || 'Could not load data.');
     } finally {
@@ -63,12 +89,23 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const activeTournament = getActiveTournament(tournaments);
+  const scopedPlayers = scopedRows(players, activeTournament);
+  const scopedMatches = scopedRows(matches, activeTournament);
+  const scopedPredictions = scopedRows(predictions, activeTournament);
+
   const pageProps = {
     player,
     setPlayer,
-    players,
-    matches,
-    predictions,
+    players: scopedPlayers,
+    matches: scopedMatches,
+    predictions: scopedPredictions,
+    tournament: activeTournament,
+    matchEvents: scopedRows(matchEvents, activeTournament),
+    matchStatistics: scopedRows(matchStatistics, activeTournament),
+    matchLineups: scopedRows(matchLineups, activeTournament),
+    predictionAids: scopedRows(predictionAids, activeTournament),
+    matchOdds: scopedRows(matchOdds, activeTournament),
     refresh,
     loading,
     message,
@@ -82,7 +119,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => navigate('/')}>
-          World Cup Picks
+          {activeTournament.name} Picks
         </button>
         <nav aria-label="Primary navigation">
           <button className={route === '/matches' ? 'active' : ''} onClick={() => navigate('/matches')}>
@@ -119,7 +156,7 @@ function App() {
   );
 }
 
-function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate }) {
+function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate, tournament }) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
 
@@ -153,7 +190,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       const token = crypto.randomUUID();
       const { data, error } = await supabase
         .from('players')
-        .insert({ name: cleanName, player_token: token, is_active: true })
+        .insert({ name: cleanName, player_token: token, is_active: true, tournament_id: tournament.id })
         .select()
         .single();
       throwIfError(error);
@@ -175,7 +212,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
     <section className="hero">
       <div>
         <p className="eyebrow">Private friends group</p>
-        <h1>Predict FIFA World Cup 2026 scores.</h1>
+        <h1>Predict {tournament.name} scores.</h1>
         <p className="hero-copy">
           Enter your name, pick match scores, then watch the leaderboard update as results are added.
         </p>
@@ -216,7 +253,23 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
   );
 }
 
-function MatchesPage({ player, players, matches, predictions, refresh, loading, setMessage, setError, navigate }) {
+function MatchesPage({
+  player,
+  players,
+  matches,
+  predictions,
+  refresh,
+  loading,
+  setMessage,
+  setError,
+  navigate,
+  matchEvents,
+  matchStatistics,
+  matchLineups,
+  predictionAids,
+  matchOdds,
+  tournament,
+}) {
   const [matchView, setMatchView] = useState('upcoming');
   const publishedMatches = matches.filter((match) => match.is_published);
   const currentPlayer = players.find((item) => item.id === player?.id) || player;
@@ -268,6 +321,10 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
     [publishedMatches],
   );
   const visibleMatches = matchView === 'played' ? playedMatches : upcomingMatches;
+  const liveLeaderboard = useMemo(
+    () => calculateLiveLeaderboard(players, matches, predictions),
+    [players, matches, predictions],
+  );
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
@@ -298,6 +355,13 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
                 refresh={refresh}
                 setMessage={setMessage}
                 setError={setError}
+                events={rowsForMatch(matchEvents, match.id)}
+                statistics={rowsForMatch(matchStatistics, match.id)}
+                lineups={rowsForMatch(matchLineups, match.id)}
+                aids={rowsForMatch(predictionAids, match.id)}
+                odds={rowsForMatch(matchOdds, match.id)}
+                livePoints={liveLeaderboard.get(currentPlayer.id)?.live_points || 0}
+                tournament={tournament}
               />
             ))}
           </div>
@@ -333,6 +397,13 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
             refresh={refresh}
             setMessage={setMessage}
             setError={setError}
+            events={rowsForMatch(matchEvents, match.id)}
+            statistics={rowsForMatch(matchStatistics, match.id)}
+            lineups={rowsForMatch(matchLineups, match.id)}
+            aids={rowsForMatch(predictionAids, match.id)}
+            odds={rowsForMatch(matchOdds, match.id)}
+            livePoints={liveLeaderboard.get(currentPlayer.id)?.live_points || 0}
+            tournament={tournament}
           />
         ))}
       </div>
@@ -346,7 +417,23 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
   );
 }
 
-function PredictionCard({ match, prediction, submittedPredictions, playersById, player, refresh, setMessage, setError }) {
+function PredictionCard({
+  match,
+  prediction,
+  submittedPredictions,
+  playersById,
+  player,
+  refresh,
+  setMessage,
+  setError,
+  events = [],
+  statistics = [],
+  lineups = [],
+  aids = [],
+  odds = [],
+  livePoints = 0,
+  tournament,
+}) {
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
   const locked = isMatchLocked(match);
@@ -354,6 +441,7 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
   const live = isMatchLive(match);
   const hasResult = !live && isFinalScoreComplete(match);
   const liveScore = getLiveScore(match);
+  const currentPredictionPoints = livePredictionPoints(prediction, match);
 
   useEffect(() => {
     setTeamAScore(prediction?.predicted_team_a_score ?? '');
@@ -378,6 +466,7 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
         {
           player_id: player.id,
           match_id: match.id,
+          tournament_id: match.tournament_id || tournament?.id || null,
           predicted_team_a_score: scoreA,
           predicted_team_b_score: scoreB,
           updated_at: new Date().toISOString(),
@@ -414,6 +503,18 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
           {match.live_source && <span>{match.live_source}</span>}
           {match.last_synced_at && <span>Synced {formatDate(match.last_synced_at)}</span>}
         </div>
+      )}
+      {live && (
+        <MatchCentre
+          events={events}
+          statistics={statistics}
+          lineups={lineups}
+          currentPredictionPoints={currentPredictionPoints}
+          livePoints={livePoints}
+        />
+      )}
+      {!live && isMatchUpcoming(match) && (
+        <PredictionAid aids={aids} odds={odds} lineups={lineups} />
       )}
       {hasResult && (
         <p className="result">
@@ -469,8 +570,116 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
   );
 }
 
+function MatchCentre({ events, statistics, lineups, currentPredictionPoints, livePoints }) {
+  const keyEvents = events.filter((event) =>
+    ['Goal', 'Card', 'subst', 'Var'].some((type) => String(event.event_type || '').toLowerCase().includes(type.toLowerCase())),
+  );
+  const goalEvents = events.filter((event) => /goal/i.test(event.event_type || '') || /goal/i.test(event.event_detail || ''));
+  const visibleStats = statistics.flatMap((row) =>
+    Object.entries(row.statistics || {})
+      .filter(([, value]) => value !== null && value !== undefined)
+      .slice(0, 5)
+      .map(([label, value]) => ({ team: row.team_name, label, value })),
+  ).slice(0, 8);
+
+  return (
+    <details className="match-centre" open>
+      <summary>Match centre</summary>
+      <div className="live-points-row">
+        <span>This pick now: {currentPredictionPoints === null ? 'n/a' : `${currentPredictionPoints} pts`}</span>
+        <span>Your live total: {livePoints} pts</span>
+      </div>
+      {goalEvents.length > 0 && (
+        <div className="event-group">
+          <strong>Goals</strong>
+          <div className="event-list">
+            {goalEvents.map((event) => <EventChip key={event.id} event={event} />)}
+          </div>
+        </div>
+      )}
+      {keyEvents.length > 0 && (
+        <div className="event-group">
+          <strong>Key events</strong>
+          <div className="event-list">
+            {keyEvents.map((event) => <EventChip key={event.id} event={event} />)}
+          </div>
+        </div>
+      )}
+      {visibleStats.length > 0 && (
+        <div className="stat-grid">
+          {visibleStats.map((stat) => (
+            <span key={`${stat.team}-${stat.label}`}>
+              <strong>{stat.label}</strong>
+              {stat.team}: {String(stat.value)}
+            </span>
+          ))}
+        </div>
+      )}
+      {lineups.length > 0 && (
+        <div className="lineup-row">
+          {lineups.map((lineup) => (
+            <span key={lineup.id}>{lineup.team_name} {lineup.formation ? `(${lineup.formation})` : ''}</span>
+          ))}
+        </div>
+      )}
+      {!events.length && !statistics.length && !lineups.length && (
+        <p className="muted">Live event details will appear when the provider publishes them.</p>
+      )}
+    </details>
+  );
+}
+
+function PredictionAid({ aids, odds, lineups }) {
+  if (!aids.length && !odds.length && !lineups.length) return null;
+  return (
+    <details className="prediction-aid">
+      <summary>Prediction aid</summary>
+      <div className="aid-grid">
+        {odds.slice(0, 2).map((odd) => (
+          <article key={odd.id}>
+            <strong>{odd.bookmaker || 'Odds'}</strong>
+            <span>{odd.market}: {odd.home_value || '-'} / {odd.draw_value || '-'} / {odd.away_value || '-'}</span>
+            {odd.last_synced_at && <small>Synced {formatDate(odd.last_synced_at)}</small>}
+          </article>
+        ))}
+        {aids.map((aid) => (
+          <article key={aid.id}>
+            <strong>{aid.title}</strong>
+            <span>{aid.summary || 'Data available'}</span>
+            {aid.last_synced_at && <small>Synced {formatDate(aid.last_synced_at)}</small>}
+          </article>
+        ))}
+        {lineups.map((lineup) => (
+          <article key={lineup.id}>
+            <strong>{lineup.team_name} lineup</strong>
+            <span>{lineup.formation || 'Formation pending'}</span>
+            {lineup.last_synced_at && <small>Synced {formatDate(lineup.last_synced_at)}</small>}
+          </article>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function EventChip({ event }) {
+  const minute = event.elapsed !== null && event.elapsed !== undefined
+    ? `${event.elapsed}${event.extra_time ? `+${event.extra_time}` : ''}'`
+    : '';
+  const assist = event.assist_name ? `, assist ${event.assist_name}` : '';
+  return (
+    <span>
+      <strong>{minute}</strong>
+      {event.team_name ? `${event.team_name}: ` : ''}
+      {event.player_name || event.event_type}
+      {assist}
+      {event.event_detail ? ` (${event.event_detail})` : ''}
+    </span>
+  );
+}
+
 function LeaderboardPage({ players, matches, predictions, refresh }) {
   const rows = calculateLeaderboard(players, matches, predictions);
+  const liveRows = calculateLiveLeaderboard(players, matches, predictions);
   return (
     <section>
       <PageTitle title="Leaderboard" action={<button onClick={refresh}>Refresh</button>} />
@@ -481,6 +690,7 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
               <th>Rank</th>
               <th>Player</th>
               <th>Points</th>
+              <th>Live</th>
               <th>Exact</th>
               <th>Outcome</th>
               <th>Picks</th>
@@ -492,6 +702,7 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
                 <td>{index + 1}</td>
                 <td>{row.name}</td>
                 <td><strong>{row.total_points}</strong></td>
+                <td>{liveRows.get(row.player_id)?.live_points || 0}</td>
                 <td>{row.exact_score_count}</td>
                 <td>{row.correct_outcome_count}</td>
                 <td>{row.predictions_submitted_count}</td>
@@ -665,7 +876,7 @@ function AdminPage(props) {
   return <AdminTools {...props} />;
 }
 
-function AdminTools({ matches, refresh, setMessage, setError }) {
+function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
   const blank = {
     external_match_id: '',
     stage: 'Group Stage',
@@ -719,6 +930,7 @@ function AdminTools({ matches, refresh, setMessage, setError }) {
     }
     try {
       const payload = {
+        tournament_id: form.tournament_id || tournament?.id || null,
         external_match_id: form.external_match_id.trim() || null,
         stage: form.stage.trim() || null,
         group_name: form.group_name.trim() || null,
@@ -794,7 +1006,10 @@ function AdminTools({ matches, refresh, setMessage, setError }) {
         if (!response.ok) throw new Error(`Fixture URL failed with ${response.status}.`);
         rows = parseFixtureJson(await response.text());
       }
-      const fixtures = normalizeFixtureRows(rows);
+      const fixtures = normalizeFixtureRows(rows).map((fixture) => ({
+        ...fixture,
+        tournament_id: tournament?.id || null,
+      }));
       if (!fixtures.length) throw new Error('No valid fixtures found.');
       const { error } = await supabase.from('matches').upsert(fixtures, { onConflict: 'external_match_id' });
       throwIfError(error);
@@ -986,6 +1201,10 @@ function getLiveScore(match) {
   const scoreB = match.live_team_b_score ?? (match.status === 'live' ? match.team_b_score : null);
   if (scoreA === null || scoreA === undefined || scoreB === null || scoreB === undefined) return '';
   return `${scoreA} - ${scoreB}`;
+}
+
+function rowsForMatch(rows, matchId) {
+  return rows.filter((row) => row.match_id === matchId);
 }
 
 function toLocalInputValue(value) {

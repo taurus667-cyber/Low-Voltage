@@ -2,6 +2,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "crons": [
+    {
+      "path": "/api/sync-live-scores",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/sync-prematch-data",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

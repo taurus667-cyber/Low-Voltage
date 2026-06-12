@@ -54,9 +54,18 @@ Paste your real values:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_ADMIN_PASSWORD=choose-a-private-group-admin-password
+VITE_TOURNAMENT_SLUG=world-cup-2026
+VITE_TOURNAMENT_NAME=FIFA World Cup 2026
+VITE_TOURNAMENT_BRANDING=Private friends group
+VITE_TOURNAMENT_TIMEZONE=UTC
+VITE_API_FOOTBALL_LEAGUE_ID=1
+VITE_API_FOOTBALL_SEASON=2026
 API_FOOTBALL_KEY=your-api-football-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 CRON_SECRET=choose-a-long-random-cron-secret
+TOURNAMENT_SLUG=world-cup-2026
+TOURNAMENT_NAME=FIFA World Cup 2026
+TOURNAMENT_TIMEZONE=UTC
 API_FOOTBALL_LEAGUE_ID=1
 API_FOOTBALL_SEASON=2026
 ```
@@ -76,6 +85,8 @@ supabase db push
 
 Or paste and run `supabase\migrations\20260612000000_live_score_fields.sql` in Supabase SQL Editor.
 
+Also run `supabase\migrations\20260613000000_tournament_platform.sql` for reusable tournament support, pre-match aids, odds, events, statistics, and lineups.
+
 ## 5. Deploy To Vercel
 
 Install Vercel CLI:
@@ -92,6 +103,7 @@ vercel
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_ANON_KEY
 vercel env add VITE_ADMIN_PASSWORD
+vercel env add VITE_TOURNAMENT_NAME
 vercel env add API_FOOTBALL_KEY
 vercel env add SUPABASE_SERVICE_ROLE_KEY
 vercel env add CRON_SECRET
@@ -105,14 +117,9 @@ $env:SMOKE_BASE_URL="https://your-production-url"
 npm run smoke:prod
 ```
 
-For 5-minute live score syncing on Vercel Hobby, add GitHub repository secrets:
+For 5-minute live score syncing, keep the project on Vercel Pro. `vercel.json` runs `/api/sync-live-scores` every 5 minutes and `/api/sync-prematch-data` every 6 hours.
 
-```text
-LIVE_SYNC_URL=https://your-production-url
-CRON_SECRET=the-same-secret-used-in-vercel
-```
-
-The GitHub Actions workflow `.github/workflows/sync-live-scores.yml` calls the Vercel sync endpoint every 5 minutes. Vercel cron is not used because Hobby deployments fail for cron schedules that run more than once per day.
+To reuse the app for another competition, create or activate a row in `tournaments` with the API-Football league ID and season, update the tournament env defaults, then import/bootstrap fixtures for that tournament.
 
 When Vercel prints the production URL, share that link in WhatsApp.
 

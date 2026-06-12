@@ -26,6 +26,10 @@ page.on('console', (message) => {
 page.on('pageerror', (error) => fatalConsole.push(error.message));
 
 try {
+  await page.route('**/rest/v1/tournaments*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json([smokeTournament()]));
+  });
   await page.route('**/rest/v1/players*', async (route, request) => {
     if (isProdSmoke) return route.continue();
     if (request.method() === 'GET') return route.fulfill(json([]));
@@ -48,9 +52,29 @@ try {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json([]));
   });
+  await page.route('**/rest/v1/match_events*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeEvents()));
+  });
+  await page.route('**/rest/v1/match_statistics*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeStatistics()));
+  });
+  await page.route('**/rest/v1/match_lineups*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeLineups()));
+  });
+  await page.route('**/rest/v1/match_prediction_aids*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeAids()));
+  });
+  await page.route('**/rest/v1/match_odds*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeOdds()));
+  });
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
-  await expectVisible(page, 'text=Predict FIFA World Cup 2026 scores.');
+  await expectVisible(page, 'text=Predict Smoke Cup scores.');
 
   if (!isProdSmoke) {
     await page.getByLabel('Display name').fill('Smoke Tester');
@@ -58,6 +82,8 @@ try {
     await expectVisible(page, 'text=Live now');
     await expectVisible(page, 'text=Canada');
     await expectVisible(page, 'text=Live: 1 - 0');
+    await expectVisible(page, 'text=Smoke Striker');
+    await expectVisible(page, 'text=Shots on Goal');
     await expectVisible(page, 'text=Predictions are closed because kickoff time has passed.');
     await expectVisible(page, 'text=Played (1)');
   } else {
@@ -98,6 +124,7 @@ function smokeMatches() {
   return [
     {
       id: 'match-live',
+      tournament_id: 'tournament-smoke',
       external_match_id: 'smoke-live',
       team_a: 'Canada',
       team_b: 'Mexico',
@@ -119,6 +146,7 @@ function smokeMatches() {
     },
     {
       id: 'match-upcoming',
+      tournament_id: 'tournament-smoke',
       external_match_id: 'smoke-upcoming',
       team_a: 'USA',
       team_b: 'Brazil',
@@ -132,6 +160,7 @@ function smokeMatches() {
     },
     {
       id: 'match-played',
+      tournament_id: 'tournament-smoke',
       external_match_id: 'smoke-played',
       team_a: 'Spain',
       team_b: 'Japan',
@@ -144,6 +173,85 @@ function smokeMatches() {
       is_published: true,
     },
   ];
+}
+
+function smokeTournament() {
+  return {
+    id: 'tournament-smoke',
+    slug: 'smoke-cup',
+    name: 'Smoke Cup',
+    api_football_league_id: '999',
+    api_football_season: '2026',
+    timezone: 'UTC',
+    branding_text: 'Private friends group',
+    is_active: true,
+  };
+}
+
+function smokeEvents() {
+  return [{
+    id: 'event-live-goal',
+    tournament_id: 'tournament-smoke',
+    match_id: 'match-live',
+    event_key: 'goal-34',
+    team_name: 'Canada',
+    player_name: 'Smoke Striker',
+    assist_name: 'Smoke Creator',
+    elapsed: 34,
+    extra_time: null,
+    event_type: 'Goal',
+    event_detail: 'Normal Goal',
+  }];
+}
+
+function smokeStatistics() {
+  return [{
+    id: 'stat-live-canada',
+    tournament_id: 'tournament-smoke',
+    match_id: 'match-live',
+    team_name: 'Canada',
+    statistics: { 'Shots on Goal': 4, 'Ball Possession': '55%' },
+  }];
+}
+
+function smokeLineups() {
+  return [{
+    id: 'lineup-upcoming-usa',
+    tournament_id: 'tournament-smoke',
+    match_id: 'match-upcoming',
+    team_name: 'USA',
+    formation: '4-3-3',
+    lineup: {},
+    last_synced_at: new Date().toISOString(),
+  }];
+}
+
+function smokeAids() {
+  return [{
+    id: 'aid-upcoming-h2h',
+    tournament_id: 'tournament-smoke',
+    match_id: 'match-upcoming',
+    aid_type: 'head_to_head',
+    title: 'Recent head to head',
+    summary: '2-1 across last 5',
+    payload: {},
+    last_synced_at: new Date().toISOString(),
+  }];
+}
+
+function smokeOdds() {
+  return [{
+    id: 'odds-upcoming',
+    tournament_id: 'tournament-smoke',
+    match_id: 'match-upcoming',
+    bookmaker: 'Smoke Odds',
+    market: 'Match Winner',
+    home_value: '2.10',
+    draw_value: '3.20',
+    away_value: '2.90',
+    payload: {},
+    last_synced_at: new Date().toISOString(),
+  }];
 }
 
 async function expectVisible(page, selector) {

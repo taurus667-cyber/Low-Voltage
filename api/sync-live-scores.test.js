@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMatchUpdates, isAuthorized } from './sync-live-scores.js';
+import {
+  buildMatchUpdates,
+  isAuthorized,
+  normalizeProviderEvents,
+  normalizeProviderStatistics,
+} from './sync-live-scores.js';
 
 test('sync endpoint rejects missing or invalid cron secret', () => {
   process.env.CRON_SECRET = 'expected-secret';
@@ -105,4 +110,46 @@ test('missing provider match leaves existing match unchanged', () => {
   );
 
   assert.deepEqual(updates, []);
+});
+
+test('normalizes live goal and card events', () => {
+  const rows = normalizeProviderEvents(
+    { id: 'match-1', tournament_id: 'tournament-1' },
+    [{
+      time: { elapsed: 34, extra: null },
+      team: { name: 'Canada' },
+      player: { name: 'Smoke Striker' },
+      assist: { name: 'Smoke Creator' },
+      type: 'Goal',
+      detail: 'Normal Goal',
+    }, {
+      time: { elapsed: 61 },
+      team: { name: 'Mexico' },
+      player: { name: 'Carded Player' },
+      type: 'Card',
+      detail: 'Yellow Card',
+    }],
+    123,
+  );
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].event_type, 'Goal');
+  assert.equal(rows[0].assist_name, 'Smoke Creator');
+  assert.equal(rows[1].event_detail, 'Yellow Card');
+});
+
+test('normalizes match statistics by team', () => {
+  const rows = normalizeProviderStatistics(
+    { id: 'match-1', tournament_id: 'tournament-1' },
+    [{
+      team: { name: 'Canada' },
+      statistics: [
+        { type: 'Shots on Goal', value: 4 },
+        { type: 'Ball Possession', value: '55%' },
+      ],
+    }],
+  );
+
+  assert.equal(rows[0].team_name, 'Canada');
+  assert.equal(rows[0].statistics['Shots on Goal'], 4);
 });
