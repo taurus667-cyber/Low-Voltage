@@ -3,6 +3,14 @@ import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
 import { calculateLeaderboard, isFinalScoreComplete } from './lib/scoring.js';
 import {
+  getLiveStatusLabel,
+  getMatchLockReason,
+  isMatchLive,
+  isMatchLocked,
+  isMatchPlayed,
+  isMatchUpcoming,
+} from './lib/matches.js';
+import {
   parseFixtureCsv,
   parseFixtureJson,
   normalizeFixtureRows,
@@ -241,7 +249,14 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
   const upcomingMatches = useMemo(
     () =>
       publishedMatches
-        .filter((match) => !isMatchPlayed(match))
+        .filter((match) => isMatchUpcoming(match))
+        .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const liveMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => isMatchLive(match))
         .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()),
     [publishedMatches],
   );
@@ -265,6 +280,29 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
     <section>
       <PageTitle title="Matches" action={<button onClick={refresh}>Refresh</button>} />
       {loading && <p className="muted">Loading matches...</p>}
+      {liveMatches.length > 0 && (
+        <section className="live-section" aria-labelledby="live-now-title">
+          <div className="section-heading">
+            <h2 id="live-now-title">Live now</h2>
+            <span>{liveMatches.length} active match{liveMatches.length === 1 ? '' : 'es'}</span>
+          </div>
+          <div className="match-list">
+            {liveMatches.map((match) => (
+              <PredictionCard
+                key={match.id}
+                match={match}
+                prediction={predictionsByMatch.get(match.id)}
+                submittedPredictions={activePredictionsByMatch.get(match.id) || []}
+                playersById={playersById}
+                player={currentPlayer}
+                refresh={refresh}
+                setMessage={setMessage}
+                setError={setError}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <div className="tab-row" role="tablist" aria-label="Match view">
         <button
           className={matchView === 'upcoming' ? 'active' : ''}
@@ -313,7 +351,9 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
   const locked = isMatchLocked(match);
   const lockReason = getMatchLockReason(match);
-  const hasResult = isFinalScoreComplete(match);
+  const live = isMatchLive(match);
+  const hasResult = !live && isFinalScoreComplete(match);
+  const liveScore = getLiveScore(match);
 
   useEffect(() => {
     setTeamAScore(prediction?.predicted_team_a_score ?? '');
@@ -353,11 +393,12 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
   };
 
   return (
-    <article className="match-card">
+    <article className={`match-card${live ? ' live-card' : ''}`}>
       <div className="match-meta">
         <span>{match.stage || 'Match'}</span>
         {match.group_name && <span>{match.group_name}</span>}
         <span>{formatDate(match.kickoff_time)}</span>
+        {live && <span className="live-pill">{getLiveStatusLabel(match)}</span>}
       </div>
       <div className="teams">
         <strong>{match.team_a}</strong>
@@ -365,6 +406,15 @@ function PredictionCard({ match, prediction, submittedPredictions, playersById, 
         <strong>{match.team_b}</strong>
       </div>
       {match.venue && <p className="muted">{match.venue}</p>}
+      {live && (
+        <div className="live-status">
+          {liveScore && <strong>Live: {liveScore}</strong>}
+          {match.live_minute !== null && match.live_minute !== undefined && <span>{match.live_minute}'</span>}
+          {match.live_status_note && <span>{match.live_status_note}</span>}
+          {match.live_source && <span>{match.live_source}</span>}
+          {match.last_synced_at && <span>Synced {formatDate(match.last_synced_at)}</span>}
+        </div>
+      )}
       {hasResult && (
         <p className="result">
           Final: {match.team_a_score} - {match.team_b_score}
@@ -821,7 +871,16 @@ function AdminTools({ matches, refresh, setMessage, setError }) {
               <p>
                 {match.status} · {match.is_published ? 'published' : 'hidden'} · manual lock {match.is_locked ? 'on' : 'off'}
                 {isFinalScoreComplete(match) ? ` · final ${match.team_a_score}-${match.team_b_score}` : ''}
+                {getLiveScore(match) ? ` · live ${getLiveScore(match)}` : ''}
               </p>
+              {(match.live_source || match.last_synced_at || match.live_status_note) && (
+                <p>
+                  {match.live_source || 'Live source'}
+                  {match.live_minute !== null && match.live_minute !== undefined ? ` · ${match.live_minute}'` : ''}
+                  {match.live_status_note ? ` · ${match.live_status_note}` : ''}
+                  {match.last_synced_at ? ` · synced ${formatDate(match.last_synced_at)}` : ''}
+                </p>
+              )}
               <p>{getMatchLockReason(match) || 'Predictions are open.'}</p>
             </div>
             <div className="admin-actions">
@@ -909,22 +968,6 @@ function useStoredPlayer() {
   return [player, setPlayer];
 }
 
-function isMatchLocked(match) {
-  return Boolean(match.is_locked) || new Date(match.kickoff_time).getTime() <= Date.now();
-}
-
-function isMatchPlayed(match) {
-  return match.status === 'finished' || isFinalScoreComplete(match) || new Date(match.kickoff_time).getTime() <= Date.now();
-}
-
-function getMatchLockReason(match) {
-  if (match.is_locked) return 'Predictions are closed because the admin lock is on.';
-  if (new Date(match.kickoff_time).getTime() <= Date.now()) {
-    return 'Predictions are closed because kickoff time has passed. Edit the kickoff time to reopen it.';
-  }
-  return '';
-}
-
 function parseScore(value) {
   if (value === '' || value === null || value === undefined) return null;
   const number = Number(value);
@@ -936,6 +979,13 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function getLiveScore(match) {
+  const scoreA = match.live_team_a_score ?? (match.status === 'live' ? match.team_a_score : null);
+  const scoreB = match.live_team_b_score ?? (match.status === 'live' ? match.team_b_score : null);
+  if (scoreA === null || scoreA === undefined || scoreB === null || scoreB === undefined) return '';
+  return `${scoreA} - ${scoreB}`;
 }
 
 function toLocalInputValue(value) {

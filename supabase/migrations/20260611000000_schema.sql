@@ -41,6 +41,12 @@ create table if not exists public.matches (
   status text default 'scheduled' check (status in ('scheduled', 'live', 'finished')),
   is_locked boolean default false,
   is_published boolean default true,
+  live_source text,
+  live_source_match_id text,
+  live_team_a_score integer check (live_team_a_score is null or live_team_a_score >= 0),
+  live_team_b_score integer check (live_team_b_score is null or live_team_b_score >= 0),
+  live_minute integer check (live_minute is null or live_minute >= 0),
+  live_status_note text,
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
@@ -64,6 +70,7 @@ where is_active = true;
 create index if not exists idx_matches_kickoff_time on public.matches (kickoff_time);
 create index if not exists idx_matches_published on public.matches (is_published);
 create index if not exists idx_matches_external_match_id on public.matches (external_match_id);
+create index if not exists idx_matches_live_source_match_id on public.matches (live_source_match_id);
 create index if not exists idx_predictions_player_id on public.predictions (player_id);
 create index if not exists idx_predictions_match_id on public.predictions (match_id);
 

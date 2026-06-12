@@ -18,6 +18,8 @@ The admin password is simple private-group protection in the browser. It is usef
 npm install
 npm run dev
 npm run build
+npm test
+npm run smoke
 ```
 
 ## Environment Variables
@@ -28,6 +30,11 @@ Create a `.env` file locally and add the same variables in Vercel:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_ADMIN_PASSWORD=choose-a-private-group-admin-password
+API_FOOTBALL_KEY=your-api-football-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+CRON_SECRET=choose-a-long-random-cron-secret
+API_FOOTBALL_LEAGUE_ID=1
+API_FOOTBALL_SEASON=2026
 ```
 
 ## Supabase Setup
@@ -68,6 +75,11 @@ supabase db push
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `VITE_ADMIN_PASSWORD`
+   - `API_FOOTBALL_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `CRON_SECRET`
+   - `API_FOOTBALL_LEAGUE_ID`
+   - `API_FOOTBALL_SEASON`
 5. Deploy.
 
 If Vercel CLI is installed and you are logged in:
@@ -77,7 +89,18 @@ vercel
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_ANON_KEY
 vercel env add VITE_ADMIN_PASSWORD
+vercel env add API_FOOTBALL_KEY
+vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add CRON_SECRET
 vercel --prod
+```
+
+Before deploying live changes:
+
+```bash
+npm run build
+npm run smoke
+SMOKE_BASE_URL=https://your-production-url npm run smoke:prod
 ```
 
 ## Fixture Import
@@ -121,6 +144,16 @@ Imports upsert by `match_id` / `external_match_id`. They do not delete manually 
 - Wrong prediction: 0 points
 - Predictions submitted after kickoff or lock are ignored
 - Matches without final scores are ignored
+
+## Live Match Focus
+
+The Matches page keeps active matches in a **Live now** section instead of moving them directly to Played after kickoff. A match is live when its status is `live`, or when kickoff has passed and it is still inside the live match window. Predictions still close at kickoff; live focus does not reopen picks.
+
+Live score syncing is handled by the server-only `/api/sync-live-scores` Vercel function. It uses API-Football as a free third-party source, writes cached live status into Supabase, and never exposes the API key or Supabase service role key to browser code. Vercel cron calls this function every 5 minutes.
+
+Run `supabase/migrations/20260612000000_live_score_fields.sql` before enabling live sync on an existing database.
+
+The source is displayed in the app as third-party data with a last-synced timestamp. Admin score/status edits remain available as the manual override.
 
 ## Public Picks
 

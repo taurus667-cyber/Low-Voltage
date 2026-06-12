@@ -23,6 +23,8 @@ From this folder:
 cd "D:\Dropbox\Codex\Windows\FIFA 2026 LOW VOLTAGE"
 npm install
 npm run build
+npm test
+npm run smoke
 ```
 
 ## 3. Create Supabase Project
@@ -52,6 +54,11 @@ Paste your real values:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 VITE_ADMIN_PASSWORD=choose-a-private-group-admin-password
+API_FOOTBALL_KEY=your-api-football-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+CRON_SECRET=choose-a-long-random-cron-secret
+API_FOOTBALL_LEAGUE_ID=1
+API_FOOTBALL_SEASON=2026
 ```
 
 Then test again:
@@ -60,6 +67,14 @@ Then test again:
 npm run build
 npm run dev
 ```
+
+For live match focus on an existing Supabase database, run:
+
+```powershell
+supabase db push
+```
+
+Or paste and run `supabase\migrations\20260612000000_live_score_fields.sql` in Supabase SQL Editor.
 
 ## 5. Deploy To Vercel
 
@@ -77,7 +92,17 @@ vercel
 vercel env add VITE_SUPABASE_URL
 vercel env add VITE_SUPABASE_ANON_KEY
 vercel env add VITE_ADMIN_PASSWORD
+vercel env add API_FOOTBALL_KEY
+vercel env add SUPABASE_SERVICE_ROLE_KEY
+vercel env add CRON_SECRET
 vercel --prod
+```
+
+After deployment:
+
+```powershell
+$env:SMOKE_BASE_URL="https://your-production-url"
+npm run smoke:prod
 ```
 
 When Vercel prints the production URL, share that link in WhatsApp.
