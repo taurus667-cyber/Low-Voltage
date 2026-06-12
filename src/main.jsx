@@ -209,6 +209,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
 }
 
 function MatchesPage({ player, players, matches, predictions, refresh, loading, setMessage, setError, navigate }) {
+  const [matchView, setMatchView] = useState('upcoming');
   const publishedMatches = matches.filter((match) => match.is_published);
   const currentPlayer = players.find((item) => item.id === player?.id) || player;
   const playersById = useMemo(() => new Map(players.map((item) => [item.id, item])), [players]);
@@ -237,6 +238,21 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
     });
     return map;
   }, [predictions, playersById]);
+  const upcomingMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => !isMatchPlayed(match))
+        .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const playedMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => isMatchPlayed(match))
+        .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const visibleMatches = matchView === 'played' ? playedMatches : upcomingMatches;
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
@@ -249,8 +265,26 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
     <section>
       <PageTitle title="Matches" action={<button onClick={refresh}>Refresh</button>} />
       {loading && <p className="muted">Loading matches...</p>}
+      <div className="tab-row" role="tablist" aria-label="Match view">
+        <button
+          className={matchView === 'upcoming' ? 'active' : ''}
+          onClick={() => setMatchView('upcoming')}
+          role="tab"
+          aria-selected={matchView === 'upcoming'}
+        >
+          Upcoming ({upcomingMatches.length})
+        </button>
+        <button
+          className={matchView === 'played' ? 'active' : ''}
+          onClick={() => setMatchView('played')}
+          role="tab"
+          aria-selected={matchView === 'played'}
+        >
+          Played ({playedMatches.length})
+        </button>
+      </div>
       <div className="match-list">
-        {publishedMatches.map((match) => (
+        {visibleMatches.map((match) => (
           <PredictionCard
             key={match.id}
             match={match}
@@ -265,6 +299,11 @@ function MatchesPage({ player, players, matches, predictions, refresh, loading, 
         ))}
       </div>
       {!publishedMatches.length && <EmptyState text="No published matches yet. Ask the admin to import or add fixtures." />}
+      {publishedMatches.length > 0 && !visibleMatches.length && (
+        <EmptyState
+          text={matchView === 'played' ? 'No played matches yet.' : 'No upcoming matches left.'}
+        />
+      )}
     </section>
   );
 }
@@ -872,6 +911,10 @@ function useStoredPlayer() {
 
 function isMatchLocked(match) {
   return Boolean(match.is_locked) || new Date(match.kickoff_time).getTime() <= Date.now();
+}
+
+function isMatchPlayed(match) {
+  return match.status === 'finished' || isFinalScoreComplete(match) || new Date(match.kickoff_time).getTime() <= Date.now();
 }
 
 function getMatchLockReason(match) {
