@@ -105,6 +105,15 @@ $env:SMOKE_BASE_URL="https://your-production-url"
 npm run smoke:prod
 ```
 
+For 5-minute live score syncing on Vercel Hobby, add GitHub repository secrets:
+
+```text
+LIVE_SYNC_URL=https://your-production-url
+CRON_SECRET=the-same-secret-used-in-vercel
+```
+
+The GitHub Actions workflow `.github/workflows/sync-live-scores.yml` calls the Vercel sync endpoint every 5 minutes. Vercel cron is not used because Hobby deployments fail for cron schedules that run more than once per day.
+
 When Vercel prints the production URL, share that link in WhatsApp.
 
 ## 6. Vercel Website Alternative

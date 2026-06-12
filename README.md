@@ -149,7 +149,14 @@ Imports upsert by `match_id` / `external_match_id`. They do not delete manually 
 
 The Matches page keeps active matches in a **Live now** section instead of moving them directly to Played after kickoff. A match is live when its status is `live`, or when kickoff has passed and it is still inside the live match window. Predictions still close at kickoff; live focus does not reopen picks.
 
-Live score syncing is handled by the server-only `/api/sync-live-scores` Vercel function. It uses API-Football as a free third-party source, writes cached live status into Supabase, and never exposes the API key or Supabase service role key to browser code. Vercel cron calls this function every 5 minutes.
+Live score syncing is handled by the server-only `/api/sync-live-scores` Vercel function. It uses API-Football as a free third-party source, writes cached live status into Supabase, and never exposes the API key or Supabase service role key to browser code.
+
+Vercel Hobby projects only allow cron jobs once per day, so the 5-minute trigger is handled by `.github/workflows/sync-live-scores.yml` or another external scheduler. Add these GitHub repository secrets after the production Vercel URL exists:
+
+```bash
+LIVE_SYNC_URL=https://your-production-url
+CRON_SECRET=the-same-secret-used-in-vercel
+```
 
 Run `supabase/migrations/20260612000000_live_score_fields.sql` before enabling live sync on an existing database.
 
