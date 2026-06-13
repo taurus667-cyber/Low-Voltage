@@ -1544,10 +1544,14 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
                     {hasLiveScore && <td>{index + 1}</td>}
                     <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
                     <td>
-                      {canReveal
-                        ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
-                        : 'Hidden until kickoff'}
-                      {exactLiveScore && <span className="exact-live-badge">Exact live score</span>}
+                      <span className="pick-score-cell">
+                        <span>
+                          {canReveal
+                            ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
+                            : 'Hidden until kickoff'}
+                        </span>
+                        {exactLiveScore && <span className="exact-live-badge">Exact live score</span>}
+                      </span>
                     </td>
                     {hasLiveScore && <td>{points ?? 'n/a'}</td>}
                     <td>{formatDate(prediction.submitted_at)}</td>

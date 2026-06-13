@@ -331,15 +331,24 @@ h2 {
   background: #e9f8ef;
 }
 
+.pick-score-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .exact-live-badge {
-  display: inline-block;
-  margin-left: 0.45rem;
+  display: inline-flex;
+  align-items: center;
   border-radius: 999px;
-  background: #0f766e;
-  color: #ffffff;
-  padding: 0.15rem 0.45rem;
+  border: 1px solid #0f766e;
+  background: #ffffff;
+  color: #075f59;
+  padding: 0.2rem 0.5rem;
   font-size: 0.72rem;
   font-weight: 900;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
