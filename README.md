@@ -12,6 +12,12 @@ This app uses:
 
 The admin password is simple private-group protection in the browser. It is useful for a trusted WhatsApp group, but it is not enterprise authentication. Do not put a Supabase service role key in this app.
 
+## Continuing With Codex
+
+If you are reopening this project from another machine or another Codex thread, start with `CODEX-HANDOFF.md`. It captures the current architecture, important files, migration notes, environment variables, known tradeoffs, and what to update before the next handoff.
+
+Recent project history is summarized in `CHANGELOG.md`.
+
 ## Local Commands
 
 ```bash
