@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
-import { calculateLeaderboard, isFinalScoreComplete } from './lib/scoring.js';
+import { calculateLeaderboard, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
 import { getActiveTournament, scopedRows } from './lib/tournament.js';
 import {
@@ -1519,10 +1519,17 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
   const liveScoreA = match?.live_team_a_score;
   const liveScoreB = match?.live_team_b_score;
   const hasLiveScore = live && Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB);
-  const rows = hasLiveScore
+  const hasFinalScore = !live && isMatchPlayed(match) && isFinalScoreComplete(match);
+  const hasRankedScore = hasLiveScore || hasFinalScore;
+  const scoreA = hasLiveScore ? liveScoreA : match?.team_a_score;
+  const scoreB = hasLiveScore ? liveScoreB : match?.team_b_score;
+  const scoreLabel = hasLiveScore ? 'Live score' : 'Final score';
+  const pointsLabel = hasLiveScore ? 'Live pts' : 'Points';
+  const exactBadgeLabel = hasLiveScore ? 'Exact live score' : 'Exact score';
+  const rows = hasRankedScore
     ? [...matchPredictions].sort((a, b) => {
-        const pointsA = livePredictionPoints(a, match) ?? -1;
-        const pointsB = livePredictionPoints(b, match) ?? -1;
+        const pointsA = hasLiveScore ? livePredictionPoints(a, match) ?? -1 : predictionPoints(a, match);
+        const pointsB = hasLiveScore ? livePredictionPoints(b, match) ?? -1 : predictionPoints(b, match);
         if (pointsA !== pointsB) return pointsB - pointsA;
         return getPlayerDisplayName(playersById.get(a.player_id)).localeCompare(
           getPlayerDisplayName(playersById.get(b.player_id)),
@@ -1533,8 +1540,8 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
   return (
     <div className="picks-expanded">
       <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
-      {hasLiveScore && (
-        <p className="live-score-pill">Live score: {liveScoreA} - {liveScoreB}</p>
+      {hasRankedScore && (
+        <p className="live-score-pill">{scoreLabel}: {scoreA} - {scoreB}</p>
       )}
       {!canReveal && (
         <p className="muted">
@@ -1543,23 +1550,27 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
       )}
       {matchPredictions.length > 0 && (
         <div className="table-wrap compact-table">
-          <table className={`picks-table${hasLiveScore ? ' live-picks-table' : ''}`}>
+          <table className={`picks-table${hasRankedScore ? ' live-picks-table' : ''}`}>
             <thead>
               <tr>
-                {hasLiveScore && <th>Rank</th>}
+                {hasRankedScore && <th>Rank</th>}
                 <th>Player</th>
                 <th>Pick</th>
-                {hasLiveScore && <th>Live pts</th>}
+                {hasRankedScore && <th>{pointsLabel}</th>}
                 <th>Submitted</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((prediction, index) => {
-                const points = hasLiveScore ? livePredictionPoints(prediction, match) : null;
-                const exactLiveScore = hasLiveScore && points === 3;
+                const points = hasRankedScore
+                  ? hasLiveScore
+                    ? livePredictionPoints(prediction, match)
+                    : predictionPoints(prediction, match)
+                  : null;
+                const exactScore = hasRankedScore && points === 3;
                 return (
-                  <tr key={prediction.id} className={exactLiveScore ? 'exact-live-pick' : ''}>
-                    {hasLiveScore && <td>{index + 1}</td>}
+                  <tr key={prediction.id} className={exactScore ? 'exact-live-pick' : ''}>
+                    {hasRankedScore && <td>{index + 1}</td>}
                     <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
                     <td>
                       <span className="pick-score-cell">
@@ -1568,10 +1579,10 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
                             ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
                             : 'Hidden until kickoff'}
                         </span>
-                        {exactLiveScore && <span className="exact-live-badge">Exact live score</span>}
+                        {exactScore && <span className="exact-live-badge">{exactBadgeLabel}</span>}
                       </span>
                     </td>
-                    {hasLiveScore && <td>{points ?? 'n/a'}</td>}
+                    {hasRankedScore && <td>{points ?? 'n/a'}</td>}
                     <td>{formatDate(prediction.submitted_at)}</td>
                   </tr>
                 );
