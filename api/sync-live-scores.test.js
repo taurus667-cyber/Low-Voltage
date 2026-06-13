@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildMatchUpdates,
+  findProviderFixture,
   isAuthorized,
   normalizeProviderEvents,
   normalizeProviderStatistics,
@@ -110,6 +111,22 @@ test('missing provider match leaves existing match unchanged', () => {
   );
 
   assert.deepEqual(updates, []);
+});
+
+test('provider fixture matching handles common country aliases', () => {
+  const fixture = findProviderFixture(
+    {
+      team_a: 'United States',
+      team_b: 'Paraguay',
+      kickoff_time: '2026-06-13T01:00:00Z',
+    },
+    [{
+      fixture: { id: 1489370, date: '2026-06-13T01:00:00+00:00' },
+      teams: { home: { name: 'USA' }, away: { name: 'Paraguay' } },
+    }],
+  );
+
+  assert.equal(fixture.fixture.id, 1489370);
 });
 
 test('normalizes live goal and card events', () => {

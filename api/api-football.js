@@ -60,10 +60,29 @@ export function numberOrNull(value) {
 }
 
 export function normalizeTeamName(value) {
-  return String(value || '')
+  const normalized = String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/gi, ' ')
     .trim()
     .toLowerCase();
+  return TEAM_NAME_ALIASES[normalized] || normalized;
 }
+
+const TEAM_NAME_ALIASES = {
+  usa: 'united states',
+  us: 'united states',
+  'u s a': 'united states',
+  'united states of america': 'united states',
+  'ivory coast': 'cote d ivoire',
+  'cote divoire': 'cote d ivoire',
+  'cote d ivoire': 'cote d ivoire',
+  turkey: 'turkiye',
+  turkiye: 'turkiye',
+  czechia: 'czech republic',
+  'czech republic': 'czech republic',
+  'korea republic': 'south korea',
+  'south korea': 'south korea',
+  'korea dpr': 'north korea',
+  'north korea': 'north korea',
+};
