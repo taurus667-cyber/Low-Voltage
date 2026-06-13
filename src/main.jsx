@@ -1484,21 +1484,40 @@ function PicksMatchSummary({
       </div>
       {expanded && (
         <PicksTable
+          match={match}
           matchPredictions={matchPredictions}
           playersById={playersById}
           activeSubmittedCount={activeSubmittedCount}
           activePlayerCount={activePlayerCount}
           canReveal={canReveal}
+          live={live}
         />
       )}
     </article>
   );
 }
 
-function PicksTable({ matchPredictions, playersById, activeSubmittedCount, activePlayerCount, canReveal }) {
+function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount, activePlayerCount, canReveal, live }) {
+  const liveScoreA = match?.live_team_a_score;
+  const liveScoreB = match?.live_team_b_score;
+  const hasLiveScore = live && Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB);
+  const rows = hasLiveScore
+    ? [...matchPredictions].sort((a, b) => {
+        const pointsA = livePredictionPoints(a, match) ?? -1;
+        const pointsB = livePredictionPoints(b, match) ?? -1;
+        if (pointsA !== pointsB) return pointsB - pointsA;
+        return getPlayerDisplayName(playersById.get(a.player_id)).localeCompare(
+          getPlayerDisplayName(playersById.get(b.player_id)),
+        );
+      })
+    : matchPredictions;
+
   return (
     <div className="picks-expanded">
       <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
+      {hasLiveScore && (
+        <p className="live-score-pill">Live score: {liveScoreA} - {liveScoreB}</p>
+      )}
       {!canReveal && (
         <p className="muted">
           Score picks stay hidden until kickoff or when the admin locks this match.
@@ -1509,23 +1528,32 @@ function PicksTable({ matchPredictions, playersById, activeSubmittedCount, activ
           <table>
             <thead>
               <tr>
+                {hasLiveScore && <th>Rank</th>}
                 <th>Player</th>
                 <th>Pick</th>
+                {hasLiveScore && <th>Live pts</th>}
                 <th>Submitted</th>
               </tr>
             </thead>
             <tbody>
-              {matchPredictions.map((prediction) => (
-                <tr key={prediction.id}>
-                  <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
-                  <td>
-                    {canReveal
-                      ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
-                      : 'Hidden until kickoff'}
-                  </td>
-                  <td>{formatDate(prediction.submitted_at)}</td>
-                </tr>
-              ))}
+              {rows.map((prediction, index) => {
+                const points = hasLiveScore ? livePredictionPoints(prediction, match) : null;
+                const exactLiveScore = hasLiveScore && points === 3;
+                return (
+                  <tr key={prediction.id} className={exactLiveScore ? 'exact-live-pick' : ''}>
+                    {hasLiveScore && <td>{index + 1}</td>}
+                    <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
+                    <td>
+                      {canReveal
+                        ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
+                        : 'Hidden until kickoff'}
+                      {exactLiveScore && <span className="exact-live-badge">Exact live score</span>}
+                    </td>
+                    {hasLiveScore && <td>{points ?? 'n/a'}</td>}
+                    <td>{formatDate(prediction.submitted_at)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

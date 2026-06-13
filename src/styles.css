@@ -317,6 +317,32 @@ h2 {
   margin: 0;
 }
 
+.live-score-pill {
+  width: max-content;
+  border-radius: 999px;
+  background: #e3f7ef;
+  color: #0f5f48;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.exact-live-pick {
+  background: #e9f8ef;
+}
+
+.exact-live-badge {
+  display: inline-block;
+  margin-left: 0.45rem;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #ffffff;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .dashboard-match-teams {
   display: flex;
   flex-wrap: wrap;
