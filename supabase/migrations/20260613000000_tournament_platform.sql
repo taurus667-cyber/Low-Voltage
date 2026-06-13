@@ -20,6 +20,13 @@ on conflict (slug) do nothing;
 alter table public.players add column if not exists tournament_id uuid references public.tournaments(id);
 alter table public.matches add column if not exists tournament_id uuid references public.tournaments(id);
 alter table public.predictions add column if not exists tournament_id uuid references public.tournaments(id);
+alter table public.matches add column if not exists live_source text;
+alter table public.matches add column if not exists live_source_match_id text;
+alter table public.matches add column if not exists live_team_a_score integer check (live_team_a_score is null or live_team_a_score >= 0);
+alter table public.matches add column if not exists live_team_b_score integer check (live_team_b_score is null or live_team_b_score >= 0);
+alter table public.matches add column if not exists live_minute integer check (live_minute is null or live_minute >= 0);
+alter table public.matches add column if not exists live_status_note text;
+alter table public.matches add column if not exists last_synced_at timestamp with time zone;
 alter table public.matches add column if not exists team_a_source_id text;
 alter table public.matches add column if not exists team_b_source_id text;
 
@@ -120,6 +127,7 @@ on public.players (tournament_id, lower(regexp_replace(btrim(name), '\s+', ' ', 
 where is_active = true;
 
 create index if not exists idx_matches_tournament_id on public.matches (tournament_id);
+create index if not exists idx_matches_live_source_match_id on public.matches (live_source_match_id);
 create index if not exists idx_players_tournament_id on public.players (tournament_id);
 create index if not exists idx_predictions_tournament_id on public.predictions (tournament_id);
 create index if not exists idx_match_events_match_id on public.match_events (match_id);

@@ -441,6 +441,7 @@ function PredictionCard({
   const hasResult = !live && isFinalScoreComplete(match);
   const liveScore = getLiveScore(match);
   const currentPredictionPoints = livePredictionPoints(prediction, match);
+  const aidItemCount = aids.length + odds.length + lineups.length;
 
   useEffect(() => {
     setTeamAScore(prediction?.predicted_team_a_score ?? '');
@@ -513,7 +514,7 @@ function PredictionCard({
         />
       )}
       {!live && isMatchUpcoming(match) && (
-        <PredictionAid aids={aids} odds={odds} lineups={lineups} />
+        <PredictionAid aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
       )}
       {hasResult && (
         <p className="result">
@@ -628,11 +629,18 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
   );
 }
 
-function PredictionAid({ aids, odds, lineups }) {
-  if (!aids.length && !odds.length && !lineups.length) return null;
+function PredictionAid({ aids, odds, lineups, itemCount }) {
+  if (!itemCount) {
+    return (
+      <div className="prediction-aid-status">
+        <strong>API-Football aid</strong>
+        <span>Waiting for provider data for this match.</span>
+      </div>
+    );
+  }
   return (
-    <details className="prediction-aid">
-      <summary>Prediction aid</summary>
+    <details className="prediction-aid" open>
+      <summary>Prediction aid · API-Football · {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
       <div className="aid-grid">
         {odds.slice(0, 2).map((odd) => (
           <article key={odd.id}>
