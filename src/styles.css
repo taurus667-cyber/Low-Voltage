@@ -288,9 +288,33 @@ h2 {
   gap: 0.25rem;
 }
 
+.dashboard-item .picks-summary-main {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .dashboard-item span {
   color: #63766f;
   font-size: 0.88rem;
+}
+
+.picks-expand-button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.75rem;
+}
+
+.picks-expanded {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid #d6e4df;
+  padding-top: 0.75rem;
+}
+
+.picks-expanded p {
+  margin: 0;
 }
 
 .dashboard-match-teams {

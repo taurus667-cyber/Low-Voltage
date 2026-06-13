@@ -1312,6 +1312,8 @@ function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, 
 }
 
 function PredictionsPage({ players, matches, predictions, teams, refresh, navigate }) {
+  const [matchView, setMatchView] = useState('upcoming');
+  const [expandedMatchIds, setExpandedMatchIds] = useState(() => new Set());
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
   const activePlayerCount = useMemo(
     () => players.filter((player) => isPlayerActive(player)).length,
@@ -1335,108 +1337,203 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
   }, [predictions, playersById]);
 
   const publishedMatches = matches.filter((match) => match.is_published);
-  const participationRows = publishedMatches.map((match) => {
-    const matchPredictions = predictionsByMatch.get(match.id) || [];
-    const activePredictionCount = matchPredictions.filter((prediction) =>
-      isPlayerActive(playersById.get(prediction.player_id)),
-    ).length;
-    return {
-      match,
-      activePredictionCount,
-      totalActivePlayers: activePlayerCount,
-      percent: activePlayerCount ? Math.round((activePredictionCount / activePlayerCount) * 100) : 0,
-    };
-  });
+  const liveMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => isMatchLive(match))
+        .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const upcomingMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => isMatchUpcoming(match))
+        .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const playedMatches = useMemo(
+    () =>
+      publishedMatches
+        .filter((match) => isMatchPlayed(match))
+        .sort((a, b) => new Date(b.kickoff_time).getTime() - new Date(a.kickoff_time).getTime()),
+    [publishedMatches],
+  );
+  const visibleMatches = matchView === 'played' ? playedMatches : upcomingMatches;
+  const toggleExpanded = (matchId) => {
+    setExpandedMatchIds((current) => {
+      const next = new Set(current);
+      if (next.has(matchId)) next.delete(matchId);
+      else next.add(matchId);
+      return next;
+    });
+  };
 
   return (
     <section>
       <PageTitle title="Picks" action={<button onClick={refresh}>Refresh</button>} />
-      {publishedMatches.length > 0 && (
-        <div className="picks-dashboard">
-          <h2>Prediction Dashboard</h2>
-          <div className="dashboard-grid">
-            {participationRows.map(({ match, activePredictionCount, totalActivePlayers, percent }) => (
-              <article className="dashboard-item" key={match.id}>
-                <div>
-                  <div className="dashboard-match-teams">
-                    <DashboardTeamLink team={teamIdentity(match.team_a, teams)} navigate={navigate} />
-                    <small>vs</small>
-                    <DashboardTeamLink team={teamIdentity(match.team_b, teams)} navigate={navigate} />
-                  </div>
-                  <span>{match.group_name || match.stage || 'Match'} · {formatDate(match.kickoff_time)}</span>
-                </div>
-                <div className="prediction-count">
-                  <strong>{activePredictionCount}</strong>
-                  <span>/ {totalActivePlayers} players</span>
-                </div>
-                <div className="progress-track" aria-label={`${percent}% submitted`}>
-                  <span style={{ width: `${percent}%` }} />
-                </div>
-              </article>
+      {liveMatches.length > 0 && (
+        <section className="live-section" aria-labelledby="live-picks-title">
+          <div className="section-heading">
+            <h2 id="live-picks-title">Live now</h2>
+            <span>{liveMatches.length} active match{liveMatches.length === 1 ? '' : 'es'}</span>
+          </div>
+          <div className="match-list">
+            {liveMatches.map((match) => (
+              <PicksMatchSummary
+                key={match.id}
+                match={match}
+                matchPredictions={predictionsByMatch.get(match.id) || []}
+                playersById={playersById}
+                activePlayerCount={activePlayerCount}
+                teams={teams}
+                navigate={navigate}
+                expanded
+                live
+              />
             ))}
           </div>
-        </div>
+        </section>
       )}
-      <div className="match-list">
-        {publishedMatches.map((match) => {
-          const matchPredictions = predictionsByMatch.get(match.id) || [];
-          const canReveal = isMatchLocked(match);
-          const activeSubmittedCount = matchPredictions.filter((prediction) =>
-            isPlayerActive(playersById.get(prediction.player_id)),
-          ).length;
-          return (
-            <article className="match-card" key={match.id}>
-              <div className="match-meta">
-                <span>{match.stage || 'Match'}</span>
-                {match.group_name && <span>{match.group_name}</span>}
-                <span>{formatDate(match.kickoff_time)}</span>
-              </div>
-              <div className="teams">
-                <TeamBlock team={teamIdentity(match.team_a, teams)} align="start" navigate={navigate} />
-                <span>vs</span>
-                <TeamBlock team={teamIdentity(match.team_b, teams)} align="end" navigate={navigate} />
-              </div>
-              <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
-              {!canReveal && (
-                <p className="muted">
-                  Score picks stay hidden until kickoff or when the admin locks this match.
-                </p>
-              )}
-              {matchPredictions.length > 0 && (
-                <div className="table-wrap compact-table">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Player</th>
-                        <th>Pick</th>
-                        <th>Submitted</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {matchPredictions.map((prediction) => (
-                        <tr key={prediction.id}>
-                          <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
-                          <td>
-                            {canReveal
-                              ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
-                              : 'Hidden until kickoff'}
-                          </td>
-                          <td>{formatDate(prediction.submitted_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {matchPredictions.length === 0 && (
-                <p className="muted">No picks submitted for this match yet.</p>
-              )}
-            </article>
-          );
-        })}
-      </div>
+      {publishedMatches.length > 0 && (
+        <>
+          <div className="tab-row" role="tablist" aria-label="Picks match view">
+            <button
+              className={matchView === 'upcoming' ? 'active' : ''}
+              onClick={() => setMatchView('upcoming')}
+              role="tab"
+              aria-selected={matchView === 'upcoming'}
+            >
+              Upcoming ({upcomingMatches.length})
+            </button>
+            <button
+              className={matchView === 'played' ? 'active' : ''}
+              onClick={() => setMatchView('played')}
+              role="tab"
+              aria-selected={matchView === 'played'}
+            >
+              Played ({playedMatches.length})
+            </button>
+          </div>
+          <div className="picks-dashboard">
+            <div className="dashboard-grid">
+              {visibleMatches.map((match) => (
+                <PicksMatchSummary
+                  key={match.id}
+                  match={match}
+                  matchPredictions={predictionsByMatch.get(match.id) || []}
+                  playersById={playersById}
+                  activePlayerCount={activePlayerCount}
+                  teams={teams}
+                  navigate={navigate}
+                  expanded={expandedMatchIds.has(match.id)}
+                  onToggle={() => toggleExpanded(match.id)}
+                />
+              ))}
+            </div>
+          </div>
+          {visibleMatches.length === 0 && (
+            <EmptyState text={matchView === 'played' ? 'No played matches yet.' : 'No upcoming matches left.'} />
+          )}
+        </>
+      )}
       {!publishedMatches.length && <EmptyState text="No published matches yet." />}
     </section>
+  );
+}
+
+function PicksMatchSummary({
+  match,
+  matchPredictions,
+  playersById,
+  activePlayerCount,
+  teams,
+  navigate,
+  expanded,
+  onToggle,
+  live = false,
+}) {
+  const canReveal = isMatchLocked(match);
+  const activeSubmittedCount = matchPredictions.filter((prediction) =>
+    isPlayerActive(playersById.get(prediction.player_id)),
+  ).length;
+  const percent = activePlayerCount ? Math.round((activeSubmittedCount / activePlayerCount) * 100) : 0;
+
+  return (
+    <article className={`dashboard-item picks-summary${live ? ' live-card' : ''}`}>
+      <div className="picks-summary-main">
+        <div>
+          <div className="dashboard-match-teams">
+            <DashboardTeamLink team={teamIdentity(match.team_a, teams)} navigate={navigate} />
+            <small>vs</small>
+            <DashboardTeamLink team={teamIdentity(match.team_b, teams)} navigate={navigate} />
+          </div>
+          <span>{match.group_name || match.stage || 'Match'} - {formatDate(match.kickoff_time)}</span>
+        </div>
+        {!live && (
+          <button className="ghost picks-expand-button" onClick={onToggle} aria-expanded={expanded}>
+            {expanded ? 'Hide picks' : 'Show picks'}
+          </button>
+        )}
+      </div>
+      <div className="prediction-count">
+        <strong>{activeSubmittedCount}</strong>
+        <span>/ {activePlayerCount} players</span>
+      </div>
+      <div className="progress-track" aria-label={`${percent}% submitted`}>
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      {expanded && (
+        <PicksTable
+          matchPredictions={matchPredictions}
+          playersById={playersById}
+          activeSubmittedCount={activeSubmittedCount}
+          activePlayerCount={activePlayerCount}
+          canReveal={canReveal}
+        />
+      )}
+    </article>
+  );
+}
+
+function PicksTable({ matchPredictions, playersById, activeSubmittedCount, activePlayerCount, canReveal }) {
+  return (
+    <div className="picks-expanded">
+      <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
+      {!canReveal && (
+        <p className="muted">
+          Score picks stay hidden until kickoff or when the admin locks this match.
+        </p>
+      )}
+      {matchPredictions.length > 0 && (
+        <div className="table-wrap compact-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Pick</th>
+                <th>Submitted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {matchPredictions.map((prediction) => (
+                <tr key={prediction.id}>
+                  <td>{getPlayerDisplayName(playersById.get(prediction.player_id))}</td>
+                  <td>
+                    {canReveal
+                      ? `${prediction.predicted_team_a_score} - ${prediction.predicted_team_b_score}`
+                      : 'Hidden until kickoff'}
+                  </td>
+                  <td>{formatDate(prediction.submitted_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {matchPredictions.length === 0 && (
+        <p className="muted">No picks submitted for this match yet.</p>
+      )}
+    </div>
   );
 }
 
