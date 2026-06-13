@@ -669,7 +669,7 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
         {aids.map((aid) => (
           <article key={aid.id}>
             <strong>{formatAidTitle(aid)}</strong>
-            <span>{formatAidSummary(aid.summary)}</span>
+            <span>{formatAidSummary(aid.summary, oddsInsight)}</span>
             {aid.last_synced_at && <small>Synced {formatDate(aid.last_synced_at)}</small>}
           </article>
         ))}
@@ -1317,13 +1317,23 @@ function formatAidTitle(aid) {
   return aid.title;
 }
 
-function formatAidSummary(summary) {
+function formatAidSummary(summary, oddsInsight) {
   const value = String(summary || '').trim();
   if (!value) return 'Data available.';
   if (/^no predictions available$/i.test(value)) return 'No clear prediction is available yet.';
   const doubleChance = value.match(/^double chance\s*:\s*(.+)$/i);
-  if (doubleChance) return `Safer pick: ${formatSentenceFragment(doubleChance[1])}.`;
+  if (doubleChance) {
+    const advice = formatSentenceFragment(doubleChance[1]);
+    if (oddsInsight?.favoriteLabel && !containsTeamName(advice, oddsInsight.favoriteLabel)) {
+      return `Different signal: the prediction model suggests ${advice}, while the odds favor ${oddsInsight.favoriteLabel}.`;
+    }
+    return `Prediction model suggests ${advice}.`;
+  }
   return formatSentenceFragment(value);
+}
+
+function containsTeamName(value, teamName) {
+  return String(value || '').toLowerCase().includes(String(teamName || '').toLowerCase());
 }
 
 function formatMarketName(market) {
