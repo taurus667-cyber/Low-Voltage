@@ -155,6 +155,29 @@ test('normalizes live goal and card events', () => {
   assert.equal(rows[1].event_detail, 'Yellow Card');
 });
 
+test('normalizes provider event keys without unstable array order', () => {
+  const first = {
+    time: { elapsed: 34, extra: null },
+    team: { name: 'Canada' },
+    player: { name: 'Smoke Striker' },
+    assist: { name: 'Smoke Creator' },
+    type: 'Goal',
+    detail: 'Normal Goal',
+  };
+  const second = {
+    time: { elapsed: 61 },
+    team: { name: 'Mexico' },
+    player: { name: 'Carded Player' },
+    type: 'Card',
+    detail: 'Yellow Card',
+  };
+  const original = normalizeProviderEvents({ id: 'match-1' }, [first, second], 123);
+  const reordered = normalizeProviderEvents({ id: 'match-1' }, [second, first], 123);
+
+  assert.equal(original[0].event_key, reordered[1].event_key);
+  assert.equal(original[1].event_key, reordered[0].event_key);
+});
+
 test('normalizes match statistics by team', () => {
   const rows = normalizeProviderStatistics(
     { id: 'match-1', tournament_id: 'tournament-1' },

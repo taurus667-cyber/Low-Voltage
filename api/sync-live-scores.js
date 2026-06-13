@@ -138,10 +138,11 @@ export function buildMatchUpdates(matches, providerFixtures, now = new Date(), t
 }
 
 export function normalizeProviderEvents(match, events, providerFixtureId, tournament = {}) {
-  return events.map((event, index) => {
+  return events.map((event) => {
     const elapsed = numberOrNull(event.time?.elapsed);
     const extra = numberOrNull(event.time?.extra);
     const player = event.player?.name || '';
+    const assist = event.assist?.name || '';
     const eventType = event.type || '';
     const detail = event.detail || '';
     const eventKey = [
@@ -150,9 +151,9 @@ export function normalizeProviderEvents(match, events, providerFixtureId, tourna
       extra ?? 'na',
       normalizeTeamName(event.team?.name),
       normalizeTeamName(player),
+      normalizeTeamName(assist),
       normalizeTeamName(eventType),
       normalizeTeamName(detail),
-      index,
     ].join(':');
     return {
       tournament_id: match.tournament_id || tournament.id || null,
@@ -162,7 +163,7 @@ export function normalizeProviderEvents(match, events, providerFixtureId, tourna
       event_key: eventKey,
       team_name: event.team?.name || null,
       player_name: player || null,
-      assist_name: event.assist?.name || null,
+      assist_name: assist || null,
       elapsed,
       extra_time: extra,
       event_type: eventType || null,

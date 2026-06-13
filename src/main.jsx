@@ -17,6 +17,10 @@ import {
   parseFixtureJson,
   normalizeFixtureRows,
 } from './lib/fixtures.js';
+import { calculateGroupStandings, getTeamStanding } from './lib/standings.js';
+import { getMatchesRefreshInterval } from './lib/polling.js';
+import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata.js';
+import { splitMatchEvents } from './lib/matchEvents.js';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -29,6 +33,8 @@ function App() {
   const [matches, setMatches] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [tournaments, setTournaments] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [teamFavorites, setTeamFavorites] = useState([]);
   const [matchEvents, setMatchEvents] = useState([]);
   const [matchStatistics, setMatchStatistics] = useState([]);
   const [matchLineups, setMatchLineups] = useState([]);
@@ -43,24 +49,36 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const [tournamentRows, playerRows, matchRows, predictionRows, eventRows, statisticRows, lineupRows, aidRows, oddsRows] = await Promise.all([
+      const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows, aidRows, oddsRows] = await Promise.all([
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
         supabase.from('players').select('*').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         supabase.from('predictions').select('*').order('submitted_at'),
-        optionalSelect(supabase.from('match_events').select('*').order('elapsed')),
-        optionalSelect(supabase.from('match_statistics').select('*')),
-        optionalSelect(supabase.from('match_lineups').select('*')),
+        optionalSelect(supabase.from('teams').select('*').order('name')),
+        optionalSelect(supabase.from('player_favorite_teams').select('*').order('created_at')),
         optionalSelect(supabase.from('match_prediction_aids').select('*').order('aid_type')),
         optionalSelect(supabase.from('match_odds').select('*')),
       ]);
       throwIfError(playerRows.error);
       throwIfError(matchRows.error);
       throwIfError(predictionRows.error);
+      const loadedMatches = matchRows.data || [];
+      const needsMatchDetails = route === '/matches' || route.startsWith('/nations/');
+      const hasLiveMatches = loadedMatches.some((match) => isMatchLive(match));
+      const [eventRows, statisticRows, lineupRows] = hasLiveMatches
+        || needsMatchDetails
+        ? await Promise.all([
+            optionalSelect(supabase.from('match_events').select('*').order('elapsed')),
+            optionalSelect(supabase.from('match_statistics').select('*')),
+            optionalSelect(supabase.from('match_lineups').select('*')),
+          ])
+        : [{ data: [] }, { data: [] }, { data: [] }];
       setTournaments(tournamentRows.data || []);
       setPlayers(playerRows.data || []);
-      setMatches(matchRows.data || []);
+      setMatches(loadedMatches);
       setPredictions(predictionRows.data || []);
+      setTeams(teamRows.data || []);
+      setTeamFavorites(favoriteRows.data || []);
       setMatchEvents(eventRows.data || []);
       setMatchStatistics(statisticRows.data || []);
       setMatchLineups(lineupRows.data || []);
@@ -71,7 +89,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [route]);
 
   useEffect(() => {
     refresh();
@@ -79,7 +97,7 @@ function App() {
 
   const navigate = (nextRoute) => {
     window.history.pushState({}, '', nextRoute);
-    setRoute(nextRoute);
+    setRoute(normalizeRoute(nextRoute));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -87,6 +105,42 @@ function App() {
   const scopedPlayers = scopedRows(players, activeTournament);
   const scopedMatches = scopedRows(matches, activeTournament);
   const scopedPredictions = scopedRows(predictions, activeTournament);
+  const scopedTeams = scopedRows(teams, activeTournament);
+  const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
+
+  const toggleTeamFavorite = async (team) => {
+    setMessage('');
+    setError('');
+    if (!player || !isPlayerActive(player)) {
+      setError('Choose your player profile before adding favorites.');
+      return;
+    }
+    if (!team?.slug) return;
+    const existing = scopedTeamFavorites.find((favorite) =>
+      favorite.player_id === player.id && favorite.team_slug === team.slug,
+    );
+    try {
+      if (existing) {
+        const { error } = await supabase.from('player_favorite_teams').delete().eq('id', existing.id);
+        throwIfError(error);
+        setMessage(`${team.name} removed from favorites.`);
+      } else {
+        const { error } = await supabase.from('player_favorite_teams').insert({
+          tournament_id: activeTournament?.id || null,
+          player_id: player.id,
+          team_slug: team.slug,
+          team_name: team.name,
+          country_code: team.country_code || null,
+          flag_url: team.flag_url || null,
+        });
+        throwIfError(error);
+        setMessage(`${team.name} added to favorites.`);
+      }
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not update favorite team.');
+    }
+  };
 
   const pageProps = {
     player,
@@ -94,6 +148,9 @@ function App() {
     players: scopedPlayers,
     matches: scopedMatches,
     predictions: scopedPredictions,
+    teams: scopedTeams,
+    teamFavorites: scopedTeamFavorites,
+    toggleTeamFavorite,
     tournament: activeTournament,
     matchEvents: scopedRows(matchEvents, activeTournament),
     matchStatistics: scopedRows(matchStatistics, activeTournament),
@@ -122,6 +179,12 @@ function App() {
           <button className={route === '/predictions' ? 'active' : ''} onClick={() => navigate('/predictions')}>
             Picks
           </button>
+          <button className={route === '/groups' ? 'active' : ''} onClick={() => navigate('/groups')}>
+            Groups
+          </button>
+          <button className={route === '/favorites' ? 'active' : ''} onClick={() => navigate('/favorites')}>
+            Favorites
+          </button>
           <button className={route === '/leaderboard' ? 'active' : ''} onClick={() => navigate('/leaderboard')}>
             Leaderboard
           </button>
@@ -143,6 +206,9 @@ function App() {
         {route === '/' && <HomePage {...pageProps} />}
         {route === '/matches' && <MatchesPage {...pageProps} />}
         {route === '/predictions' && <PredictionsPage {...pageProps} />}
+        {route === '/groups' && <GroupsPage {...pageProps} />}
+        {route === '/favorites' && <FavoritesPage {...pageProps} />}
+        {route.startsWith('/nations/') && <NationPage {...pageProps} route={route} />}
         {route === '/leaderboard' && <LeaderboardPage {...pageProps} />}
         {route === '/admin' && <AdminPage {...pageProps} />}
       </main>
@@ -256,6 +322,7 @@ function MatchesPage({
   player,
   players,
   matches,
+  teams,
   predictions,
   refresh,
   loading,
@@ -324,14 +391,26 @@ function MatchesPage({
     () => calculateLiveLeaderboard(players, matches, predictions),
     [players, matches, predictions],
   );
+  const refreshInterval = getMatchesRefreshInterval(publishedMatches);
 
   useEffect(() => {
     if (!currentPlayer || !isPlayerActive(currentPlayer)) return undefined;
+    if (!refreshInterval) return undefined;
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === 'visible') refresh();
-    }, 30000);
+    }, refreshInterval);
     return () => window.clearInterval(intervalId);
-  }, [currentPlayer, refresh]);
+  }, [currentPlayer, refresh, refreshInterval]);
+
+  useEffect(() => {
+    const targetId = window.location.hash.replace('#match-', '');
+    if (!targetId) return;
+    const targetMatch = publishedMatches.find((match) => match.id === targetId);
+    if (targetMatch && isMatchPlayed(targetMatch)) setMatchView('played');
+    window.setTimeout(() => {
+      document.getElementById(`match-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }, [publishedMatches]);
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
@@ -369,6 +448,8 @@ function MatchesPage({
                 odds={rowsForMatch(matchOdds, match.id)}
                 livePoints={liveLeaderboard.get(currentPlayer.id)?.live_points || 0}
                 tournament={tournament}
+                teams={teams}
+                navigate={navigate}
               />
             ))}
           </div>
@@ -411,6 +492,8 @@ function MatchesPage({
             odds={rowsForMatch(matchOdds, match.id)}
             livePoints={liveLeaderboard.get(currentPlayer.id)?.live_points || 0}
             tournament={tournament}
+            teams={teams}
+            navigate={navigate}
           />
         ))}
       </div>
@@ -440,6 +523,8 @@ function PredictionCard({
   odds = [],
   livePoints = 0,
   tournament,
+  teams = [],
+  navigate,
 }) {
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
@@ -450,6 +535,9 @@ function PredictionCard({
   const liveScore = getLiveScore(match);
   const currentPredictionPoints = livePredictionPoints(prediction, match);
   const aidItemCount = aids.length + odds.length + lineups.length;
+  const teamA = teamIdentity(match.team_a, teams);
+  const teamB = teamIdentity(match.team_b, teams);
+  const played = isMatchPlayed(match);
 
   useEffect(() => {
     setTeamAScore(prediction?.predicted_team_a_score ?? '');
@@ -490,7 +578,7 @@ function PredictionCard({
   };
 
   return (
-    <article className={`match-card${live ? ' live-card' : ''}`}>
+    <article id={`match-${match.id}`} className={`match-card${live ? ' live-card' : ''}`}>
       <div className="match-meta">
         <span>{match.stage || 'Match'}</span>
         {match.group_name && <span>{match.group_name}</span>}
@@ -498,9 +586,9 @@ function PredictionCard({
         {live && <span className="live-pill">{getLiveStatusLabel(match)}</span>}
       </div>
       <div className="teams">
-        <strong>{match.team_a}</strong>
+        <TeamBlock team={teamA} align="start" navigate={navigate} />
         <span>vs</span>
-        <strong>{match.team_b}</strong>
+        <TeamBlock team={teamB} align="end" navigate={navigate} />
       </div>
       {match.venue && <p className="muted">{match.venue}</p>}
       {live && (
@@ -521,8 +609,26 @@ function PredictionCard({
           livePoints={livePoints}
         />
       )}
-      {!live && isMatchUpcoming(match) && (
-        <PredictionAid match={match} aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
+      {!live && played && (
+        <MatchCentre
+          match={match}
+          teams={teams}
+          events={events}
+          statistics={statistics}
+          lineups={lineups}
+          aids={aids}
+          odds={odds}
+          insightItemCount={aids.length + odds.length}
+          currentPredictionPoints={null}
+          livePoints={livePoints}
+          title="Match recap"
+          open={false}
+          showLivePoints={false}
+          emptyText="No captured live stats are available for this match yet."
+        />
+      )}
+      {!live && !played && (
+        <PredictionAid match={match} teams={teams} aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
       )}
       {hasResult && (
         <p className="result">
@@ -578,34 +684,93 @@ function PredictionCard({
   );
 }
 
-function MatchCentre({ events, statistics, lineups, currentPredictionPoints, livePoints }) {
-  const keyEvents = events.filter((event) =>
-    ['Goal', 'Card', 'subst', 'Var'].some((type) => String(event.event_type || '').toLowerCase().includes(type.toLowerCase())),
+function TeamBlock({ team, align = 'start', navigate }) {
+  const openNation = () => {
+    if (team?.slug && navigate) navigate(`/nations/${team.slug}`);
+  };
+  return (
+    <button className={`team-block ${align}`} onClick={openNation} disabled={!team?.slug} title={`Open ${team.name} profile`}>
+      <TeamFlag team={team} />
+      <span>
+        <strong>{team.name}</strong>
+      </span>
+    </button>
   );
-  const goalEvents = events.filter((event) => /goal/i.test(event.event_type || '') || /goal/i.test(event.event_detail || ''));
+}
+
+function TeamFlag({ team }) {
+  if (!team?.flag_url) return <span className="flag-placeholder" aria-hidden="true">{(team?.name || '?').slice(0, 2).toUpperCase()}</span>;
+  return <img className="team-flag" src={team.flag_url} alt={`${team.name} flag`} loading="lazy" />;
+}
+
+function FavoriteTeamButton({ team, isFavorite, onToggle, player }) {
+  const label = isFavorite ? `Remove ${team.name} from favorites` : `Add ${team.name} to favorites`;
+  return (
+    <button
+      className={`favorite-button${isFavorite ? ' active' : ''}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle?.(team);
+      }}
+      disabled={!player || !team?.slug}
+      title={!player ? 'Choose your player profile first' : label}
+      aria-label={label}
+    >
+      {isFavorite ? '★' : '☆'}
+    </button>
+  );
+}
+
+function isFavoriteTeam(team, favorites = [], player) {
+  if (!team?.slug || !player) return false;
+  return favorites.some((favorite) => favorite.player_id === player.id && favorite.team_slug === team.slug);
+}
+
+function MatchCentre({
+  match,
+  teams = [],
+  events,
+  statistics,
+  lineups,
+  aids = [],
+  odds = [],
+  insightItemCount = 0,
+  currentPredictionPoints,
+  livePoints,
+  title = 'Match centre',
+  open = true,
+  showLivePoints = true,
+  emptyText = 'Live event details will appear when the provider publishes them.',
+}) {
+  const { keyEvents, goalEvents } = splitMatchEvents(events);
   const statComparison = buildStatComparison(statistics);
+  const hasPredictionInsight = aids.length > 0 || odds.length > 0;
+  const insightSummary = match && hasPredictionInsight ? buildPredictionAidSummary({ match, teams, aids, odds, lineups }) : null;
 
   return (
-    <details className="match-centre" open>
-      <summary>Match centre</summary>
-      <div className="live-points-row">
-        <span>This pick now: {currentPredictionPoints === null ? 'n/a' : `${currentPredictionPoints} pts`}</span>
-        <span>Your live total: {livePoints} pts</span>
-      </div>
-      {goalEvents.length > 0 && (
-        <div className="event-group">
-          <strong>Goals</strong>
-          <div className="event-list">
-            {goalEvents.map((event) => <EventChip key={event.id} event={event} />)}
-          </div>
+    <details className="match-centre" open={open}>
+      <summary>
+        <span>{title}</span>
+        {insightItemCount > 0 && <span className="insight-badge">{insightItemCount} insight item{insightItemCount === 1 ? '' : 's'}</span>}
+        {insightSummary?.oddsInsight?.favoriteLabel && (
+          <span className="summary-favorite">
+            {insightSummary.oddsInsight.favoriteTeam && <TeamFlag team={insightSummary.oddsInsight.favoriteTeam} />}
+            Favored: {insightSummary.oddsInsight.favoriteLabel}
+          </span>
+        )}
+        {insightSummary?.latestSyncedAt && <span className="aid-caption">Updated {formatRelativeTime(insightSummary.latestSyncedAt)}</span>}
+      </summary>
+      {showLivePoints && (
+        <div className="live-points-row">
+          <span>This pick now: {currentPredictionPoints === null ? 'n/a' : `${currentPredictionPoints} pts`}</span>
+          <span>Your live total: {livePoints} pts</span>
         </div>
       )}
-      {keyEvents.length > 0 && (
-        <div className="event-group">
-          <strong>Key events</strong>
-          <div className="event-list">
-            {keyEvents.map((event) => <EventChip key={event.id} event={event} />)}
-          </div>
+      {lineups.length > 0 && (
+        <div className="lineup-row">
+          {lineups.map((lineup) => (
+            <span key={lineup.id}>{lineup.team_name} {lineup.formation ? `(${lineup.formation})` : ''}</span>
+          ))}
         </div>
       )}
       {statComparison.rows.length > 0 && (
@@ -631,15 +796,34 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
           </table>
         </div>
       )}
-      {lineups.length > 0 && (
-        <div className="lineup-row">
-          {lineups.map((lineup) => (
-            <span key={lineup.id}>{lineup.team_name} {lineup.formation ? `(${lineup.formation})` : ''}</span>
-          ))}
+      {keyEvents.length > 0 && (
+        <div className="event-group">
+          <strong>Key events</strong>
+          <div className="event-list">
+            {keyEvents.map((event) => <EventChip key={event.id} event={event} teams={teams} />)}
+          </div>
         </div>
       )}
+      {goalEvents.length > 0 && (
+        <div className="event-group">
+          <strong>Goals</strong>
+          <div className="event-list">
+            {goalEvents.map((event) => <EventChip key={event.id} event={event} teams={teams} />)}
+          </div>
+        </div>
+      )}
+      {insightSummary && (
+        <PredictionAidContent
+          match={match}
+          aids={aids}
+          odds={odds}
+          lineups={lineups}
+          summary={insightSummary}
+          showLineups={false}
+        />
+      )}
       {!events.length && !statistics.length && !lineups.length && (
-        <p className="muted">Live event details will appear when the provider publishes them.</p>
+        <p className="muted">{emptyText}</p>
       )}
     </details>
   );
@@ -688,24 +872,63 @@ function buildStatComparison(statistics) {
   };
 }
 
-function PredictionAid({ match, aids, odds, lineups, itemCount }) {
-  const oddsInsight = buildOddsInsight(odds, match);
+function PredictionAid({ match, teams = [], aids, odds, lineups, itemCount }) {
+  const summary = buildPredictionAidSummary({ match, teams, aids, odds, lineups });
   if (!itemCount) {
     return (
       <div className="prediction-aid-status">
-        <strong>Match insight</strong>
-        <span>Waiting for match data for this game.</span>
+        <div>
+          <strong>Match insight</strong>
+          <span>Waiting for match data for this game.</span>
+        </div>
       </div>
     );
   }
   return (
-    <details className="prediction-aid" open>
-      <summary>Match insight - latest data - {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
-      {oddsInsight && (
+    <details className="prediction-aid">
+      <summary>
+        <span>Match insight</span>
+        <span className="insight-badge">{itemCount} item{itemCount === 1 ? '' : 's'}</span>
+        {summary.oddsInsight?.favoriteLabel && (
+          <span className="summary-favorite">
+            {summary.oddsInsight.favoriteTeam && <TeamFlag team={summary.oddsInsight.favoriteTeam} />}
+            Favored: {summary.oddsInsight.favoriteLabel}
+          </span>
+        )}
+        {summary.latestSyncedAt && <span className="aid-caption">Updated {formatRelativeTime(summary.latestSyncedAt)}</span>}
+      </summary>
+      <PredictionAidContent match={match} aids={aids} odds={odds} lineups={lineups} summary={summary} />
+    </details>
+  );
+}
+
+function buildPredictionAidSummary({ match, teams = [], aids = [], odds = [], lineups = [] }) {
+  const teamA = teamIdentity(match.team_a, teams);
+  const teamB = teamIdentity(match.team_b, teams);
+  return {
+    teamA,
+    teamB,
+    oddsInsight: buildOddsInsight(odds, match, { teamA, teamB }),
+    latestSyncedAt: latestTimestamp([
+      ...aids.map((aid) => aid.last_synced_at),
+      ...odds.map((odd) => odd.last_synced_at),
+      ...lineups.map((lineup) => lineup.last_synced_at),
+    ]),
+  };
+}
+
+function PredictionAidContent({ match, aids, odds, lineups, summary, showLineups = true }) {
+  const displayedLineups = showLineups ? lineups : [];
+  return (
+    <>
+      {summary.oddsInsight && (
         <div className="odds-summary">
           <strong>Market view</strong>
-          <span>{oddsInsight.favoriteLabel} is favored by the available odds.</span>
-          {oddsInsight.syncedAt && <small>Odds synced {formatDate(oddsInsight.syncedAt)}</small>}
+          <span>
+            {summary.oddsInsight.favoriteTeam && <TeamFlag team={summary.oddsInsight.favoriteTeam} />}
+            {summary.oddsInsight.favoriteLabel} is favored by the available odds.
+          </span>
+          {summary.oddsInsight.syncedAt && <small>Odds synced {formatDate(summary.oddsInsight.syncedAt)}</small>}
         </div>
       )}
       <div className="aid-grid">
@@ -714,9 +937,12 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
             <strong>{odd.bookmaker || 'Bookmaker odds'}</strong>
             <span className="aid-caption">{formatMarketName(odd.market)}</span>
             <div className="odds-options">
-              {buildOddsOptions(odd, match).map((option) => (
+              {buildOddsOptions(odd, match, { teamA: summary.teamA, teamB: summary.teamB }).map((option) => (
                 <span key={option.key} className={option.isFavorite ? 'favorite' : ''}>
-                  <small>{option.label}</small>
+                  <small>
+                    {option.team && <TeamFlag team={option.team} />}
+                    {option.label}
+                  </small>
                   <strong>{option.odd}</strong>
                   {option.probability && <em>{option.probability}</em>}
                 </span>
@@ -728,11 +954,11 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
         {aids.map((aid) => (
           <article key={aid.id}>
             <strong>{formatAidTitle(aid)}</strong>
-            <span>{formatAidSummary(aid.summary, oddsInsight)}</span>
+            <span>{formatAidSummary(aid.summary, summary.oddsInsight)}</span>
             {aid.last_synced_at && <small>Synced {formatDate(aid.last_synced_at)}</small>}
           </article>
         ))}
-        {lineups.map((lineup) => (
+        {displayedLineups.map((lineup) => (
           <article key={lineup.id}>
             <strong>{lineup.team_name} lineup</strong>
             <span>{lineup.formation || 'Formation pending'}</span>
@@ -740,11 +966,11 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
           </article>
         ))}
       </div>
-    </details>
+    </>
   );
 }
 
-function buildOddsInsight(odds, match) {
+function buildOddsInsight(odds, match, teams = {}) {
   const rows = odds
     .map((odd) => ({
       home: parseDecimalOdd(odd.home_value),
@@ -765,17 +991,22 @@ function buildOddsInsight(odds, match) {
     draw: 'Draw',
     away: match.team_b,
   };
+  const favoriteTeam = {
+    home: teams.teamA,
+    away: teams.teamB,
+  };
   return {
     favoriteLabel: labels[favoriteKey] || 'A team',
+    favoriteTeam: favoriteTeam[favoriteKey] || null,
     syncedAt: rows.map((row) => row.syncedAt).filter(Boolean).sort().at(-1),
   };
 }
 
-function buildOddsOptions(odd, match) {
+function buildOddsOptions(odd, match, teams = {}) {
   const options = [
-    { key: 'home', label: `${match.team_a} win`, value: odd.home_value },
+    { key: 'home', label: `${match.team_a} win`, value: odd.home_value, team: teams.teamA },
     { key: 'draw', label: 'Draw', value: odd.draw_value },
-    { key: 'away', label: `${match.team_b} win`, value: odd.away_value },
+    { key: 'away', label: `${match.team_b} win`, value: odd.away_value, team: teams.teamB },
   ].map((option) => {
     const decimal = parseDecimalOdd(option.value);
     return {
@@ -805,15 +1036,16 @@ function average(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function EventChip({ event }) {
+function EventChip({ event, teams = [] }) {
   const minute = event.elapsed !== null && event.elapsed !== undefined
     ? `${event.elapsed}${event.extra_time ? `+${event.extra_time}` : ''}'`
     : '';
   const assist = event.assist_name ? `, assist ${event.assist_name}` : '';
+  const team = event.team_name ? teamIdentity(event.team_name, teams) : null;
   return (
-    <span>
+    <span className="event-chip" title={event.team_name || undefined}>
+      {team && <TeamFlag team={team} />}
       <strong>{minute}</strong>
-      {event.team_name ? `${event.team_name}: ` : ''}
       {event.player_name || formatEventType(event.event_type)}
       {assist}
       {event.event_detail ? ` (${formatEventDetail(event.event_detail)})` : ''}
@@ -823,10 +1055,12 @@ function EventChip({ event }) {
 
 function LeaderboardPage({ players, matches, predictions, refresh }) {
   const rows = calculateLeaderboard(players, matches, predictions);
+  const visibleRows = rows.filter((row) => row.predictions_submitted_count > 0);
   const liveRows = calculateLiveLeaderboard(players, matches, predictions);
   return (
     <section>
       <PageTitle title="Leaderboard" action={<button onClick={refresh}>Refresh</button>} />
+      <p className="muted">You will see your name here once you submit a prediction.</p>
       <div className="table-wrap">
         <table>
           <thead>
@@ -841,7 +1075,7 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {visibleRows.map((row, index) => (
               <tr key={row.player_id}>
                 <td>{index + 1}</td>
                 <td>{row.name}</td>
@@ -855,12 +1089,229 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
           </tbody>
         </table>
       </div>
-      {!rows.length && <EmptyState text="Leaderboard will appear after players submit predictions and results are entered." />}
+      {!visibleRows.length && <EmptyState text="Leaderboard will appear after the first prediction is submitted." />}
     </section>
   );
 }
 
-function PredictionsPage({ players, matches, predictions, refresh }) {
+function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player, refresh, navigate }) {
+  const groups = calculateGroupStandings(matches);
+  return (
+    <section>
+      <PageTitle title="Groups" action={<button onClick={refresh}>Refresh</button>} />
+      <div className="group-table-list">
+        {groups.map((group) => (
+          <article className="panel group-table" key={group.groupName}>
+            <h2>{group.groupName}</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Nation</th>
+                    <th>P</th>
+                    <th>W</th>
+                    <th>D</th>
+                    <th>L</th>
+                    <th>GF</th>
+                    <th>GA</th>
+                    <th>GD</th>
+                    <th>Pts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.rows.map((row) => {
+                    const team = teamIdentity(row.team, teams);
+                    return (
+                      <tr key={row.team}>
+                        <td>{row.position}</td>
+                        <td>
+                          <div className="favorite-team-cell">
+                            <FavoriteTeamButton
+                              team={team}
+                              isFavorite={isFavoriteTeam(team, teamFavorites, player)}
+                              onToggle={toggleTeamFavorite}
+                              player={player}
+                            />
+                            <button className="table-team" onClick={() => navigate(`/nations/${team.slug}`)}>
+                              <TeamFlag team={team} />
+                              <span>{row.team}</span>
+                            </button>
+                          </div>
+                        </td>
+                        <td>{row.played}</td>
+                        <td>{row.won}</td>
+                        <td>{row.drawn}</td>
+                        <td>{row.lost}</td>
+                        <td>{row.goals_for}</td>
+                        <td>{row.goals_against}</td>
+                        <td>{row.goal_difference}</td>
+                        <td><strong>{row.points}</strong></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        ))}
+      </div>
+      {!groups.length && <EmptyState text="Group tables will appear after group-stage results are entered." />}
+    </section>
+  );
+}
+
+function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navigate }) {
+  if (!player) {
+    return <NeedPlayer navigate={navigate} />;
+  }
+  const favorites = teamFavorites
+    .filter((favorite) => favorite.player_id === player.id)
+    .map((favorite) => ({
+      favorite,
+      team: teamIdentity(favorite.team_name || favorite.team_slug, teams),
+    }))
+    .sort((a, b) => a.team.name.localeCompare(b.team.name));
+
+  return (
+    <section>
+      <PageTitle title="Favorites" />
+      <p className="muted">Star teams from Groups or a nation page to keep them here.</p>
+      <div className="favorite-grid">
+        {favorites.map(({ favorite, team }) => (
+          <article className="favorite-card" key={favorite.id || team.slug}>
+            <button className="favorite-card-main" onClick={() => navigate(`/nations/${team.slug}`)}>
+              <TeamFlag team={team} />
+              <span>
+                <strong>{team.name}</strong>
+                {team.country && <small>{team.country}</small>}
+              </span>
+            </button>
+            <FavoriteTeamButton
+              team={team}
+              isFavorite
+              onToggle={toggleTeamFavorite}
+              player={player}
+            />
+          </article>
+        ))}
+      </div>
+      {!favorites.length && <EmptyState text="No favorite teams yet. Tap a star beside a team to add one." />}
+    </section>
+  );
+}
+
+function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, player, matchStatistics, refresh, navigate }) {
+  const slug = route.replace('/nations/', '').split('/')[0];
+  const providerTeam = teams.find((team) => team.slug === slug);
+  const fallbackName = slug.split('-').map((part) => formatSentenceFragment(part)).join(' ');
+  const team = teamIdentity(providerTeam?.name || fallbackName, teams);
+  const teamKey = normalizeName(team.name);
+  const teamMatches = matches
+    .filter((match) => match.is_published && (
+      normalizeName(match.team_a) === teamKey ||
+      normalizeName(match.team_b) === teamKey ||
+      teamIdentity(match.team_a, teams).slug === slug ||
+      teamIdentity(match.team_b, teams).slug === slug
+    ))
+    .sort((a, b) => new Date(a.kickoff_time).getTime() - new Date(b.kickoff_time).getTime());
+  const groupName = teamMatches.find((match) => match.group_name)?.group_name || '';
+  const standing = getTeamStanding(matches, team.name);
+  const recentStatistics = matchStatistics.filter((row) => normalizeName(row.team_name) === teamKey).slice(-3);
+
+  return (
+    <section>
+      <PageTitle title={team.name} action={<button onClick={refresh}>Refresh</button>} />
+      <div className="nation-hero panel">
+        <div className="nation-flag-stack">
+          <FavoriteTeamButton
+            team={team}
+            isFavorite={isFavoriteTeam(team, teamFavorites, player)}
+            onToggle={toggleTeamFavorite}
+            player={player}
+          />
+          <TeamFlag team={team} />
+        </div>
+        <div>
+          <p className="eyebrow">{groupName || team.country || 'Nation profile'}</p>
+          <h1>{team.name}</h1>
+          <p className="muted">{teamMatches.length} published fixture{teamMatches.length === 1 ? '' : 's'} in this game.</p>
+        </div>
+        {team.logo_url && <img className="nation-logo" src={team.logo_url} alt={`${team.name} logo`} loading="lazy" />}
+      </div>
+
+      <div className="nation-grid">
+        <div className="panel">
+          <h2>Group standing</h2>
+          {standing ? (
+            <div className="standing-card">
+              <strong>{standing.position}</strong>
+              <span>{standing.points} pts</span>
+              <span>{standing.played} played</span>
+              <span>GD {standing.goal_difference}</span>
+            </div>
+          ) : (
+            <p className="muted">No completed group matches yet.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
+        <h2>Fixtures and results</h2>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Match</th>
+                <th>Status</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamMatches.map((match) => (
+                <tr key={match.id}>
+                  <td>{formatDate(match.kickoff_time)}</td>
+                  <td>
+                    <button className="table-team match-link" onClick={() => navigate(`/matches#match-${match.id}`)}>
+                      <span>{match.team_a} vs {match.team_b}</span>
+                    </button>
+                  </td>
+                  <td>{getLiveStatusLabel(match)}</td>
+                  <td>{isFinalScoreComplete(match) ? `${match.team_a_score} - ${match.team_b_score}` : getLiveScore(match) || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!teamMatches.length && <p className="muted">No published fixtures found for this nation.</p>}
+      </div>
+
+      <div className="panel">
+        <h2>Recent match statistics</h2>
+        {recentStatistics.length > 0 ? (
+          <div className="aid-grid">
+            {recentStatistics.map((row) => (
+              <article key={row.id}>
+                <strong>{row.team_name}</strong>
+                <small>Synced {row.last_synced_at ? formatDate(row.last_synced_at) : 'recently'}</small>
+                {Object.entries(row.statistics || {}).slice(0, 4).map(([label, value]) => (
+                  <span key={label}>{formatStatLabel(label)}: {formatStatValue(value)}</span>
+                ))}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">Live/statistical data will appear here after provider sync captures it.</p>
+        )}
+      </div>
+
+      <button onClick={() => navigate('/matches')}>Back to matches</button>
+    </section>
+  );
+}
+
+function PredictionsPage({ players, matches, predictions, teams, refresh, navigate }) {
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
   const activePlayerCount = useMemo(
     () => players.filter((player) => isPlayerActive(player)).length,
@@ -907,7 +1358,11 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
             {participationRows.map(({ match, activePredictionCount, totalActivePlayers, percent }) => (
               <article className="dashboard-item" key={match.id}>
                 <div>
-                  <strong>{match.team_a} vs {match.team_b}</strong>
+                  <div className="dashboard-match-teams">
+                    <DashboardTeamLink team={teamIdentity(match.team_a, teams)} navigate={navigate} />
+                    <small>vs</small>
+                    <DashboardTeamLink team={teamIdentity(match.team_b, teams)} navigate={navigate} />
+                  </div>
                   <span>{match.group_name || match.stage || 'Match'} · {formatDate(match.kickoff_time)}</span>
                 </div>
                 <div className="prediction-count">
@@ -937,9 +1392,9 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
                 <span>{formatDate(match.kickoff_time)}</span>
               </div>
               <div className="teams">
-                <strong>{match.team_a}</strong>
+                <TeamBlock team={teamIdentity(match.team_a, teams)} align="start" navigate={navigate} />
                 <span>vs</span>
-                <strong>{match.team_b}</strong>
+                <TeamBlock team={teamIdentity(match.team_b, teams)} align="end" navigate={navigate} />
               </div>
               <p className="muted">{activeSubmittedCount} of {activePlayerCount} active players submitted.</p>
               {!canReveal && (
@@ -982,6 +1437,18 @@ function PredictionsPage({ players, matches, predictions, refresh }) {
       </div>
       {!publishedMatches.length && <EmptyState text="No published matches yet." />}
     </section>
+  );
+}
+
+function DashboardTeamLink({ team, navigate }) {
+  const openNation = () => {
+    if (team?.slug && navigate) navigate(`/nations/${team.slug}`);
+  };
+  return (
+    <button className="dashboard-team-link" onClick={openNation} disabled={!team?.slug} title={`Open ${team.name} profile`}>
+      <TeamFlag team={team} />
+      <span>{team.name}</span>
+    </button>
   );
 }
 
@@ -1299,8 +1766,7 @@ function EmptyState({ text }) {
 
 function useRoute() {
   const normalize = () => {
-    const path = window.location.pathname;
-    return ['/', '/matches', '/predictions', '/leaderboard', '/admin'].includes(path) ? path : '/';
+    return normalizeRoute(window.location.pathname);
   };
   const [route, setRoute] = useState(normalize);
   useEffect(() => {
@@ -1309,6 +1775,12 @@ function useRoute() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
   return [route, setRoute];
+}
+
+function normalizeRoute(value) {
+  const path = String(value || '/').split(/[?#]/)[0] || '/';
+  if (path.startsWith('/nations/')) return path;
+  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/admin'].includes(path) ? path : '/';
 }
 
 function useStoredPlayer() {
@@ -1338,6 +1810,26 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function formatRelativeTime(value, now = Date.now()) {
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return '';
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+function latestTimestamp(values = []) {
+  return values
+    .filter(Boolean)
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+    .at(-1) || '';
 }
 
 function getLiveScore(match) {

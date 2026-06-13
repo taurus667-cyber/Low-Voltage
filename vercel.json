@@ -10,6 +10,10 @@
     {
       "path": "/api/sync-prematch-data",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/check-standings",
+      "schedule": "15 3 * * *"
     }
   ],
   "rewrites": [

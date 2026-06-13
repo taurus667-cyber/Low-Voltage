@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeOdds, normalizePredictionAids } from './sync-prematch-data.js';
+import { normalizeOdds, normalizePredictionAids, normalizeProviderTeams } from './sync-prematch-data.js';
 
 test('normalizes pre-match prediction aid data', () => {
   const rows = normalizePredictionAids(
@@ -42,4 +42,27 @@ test('normalizes match winner odds', () => {
   assert.equal(rows[0].home_value, '2.10');
   assert.equal(rows[0].draw_value, '3.20');
   assert.equal(rows[0].away_value, '2.90');
+});
+
+test('normalizes provider teams with profile and visual metadata', () => {
+  const rows = normalizeProviderTeams(
+    [{
+      team: {
+        id: 2384,
+        name: 'USA',
+        country: 'USA',
+        logo: 'https://example.com/usa.png',
+      },
+      venue: { name: 'Home Stadium' },
+    }],
+    { id: 'tournament-1' },
+    new Date('2026-06-13T00:00:00Z'),
+  );
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].provider_team_id, '2384');
+  assert.equal(rows[0].slug, 'united-states');
+  assert.equal(rows[0].country_code, 'us');
+  assert.equal(rows[0].flag_url, 'https://flagcdn.com/w80/us.png');
+  assert.equal(rows[0].profile_payload.venue.name, 'Home Stadium');
 });

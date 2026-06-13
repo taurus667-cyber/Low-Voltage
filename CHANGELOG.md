@@ -4,6 +4,12 @@ This project did not start with a formal changelog, so earlier entries are recon
 
 ## 2026-06-13
 
+- Added smarter Matches page polling to reduce automatic refreshes when there are no live or near-kickoff matches.
+- Added team flags/logos on match cards, backed by API-Football team data and verified static flag metadata.
+- Added clickable nation profile pages at `/nations/:teamSlug`.
+- Added app-calculated group standings page at `/groups`.
+- Added a daily server-side standings check that records app standings versus API-Football standings.
+- Extended Supabase `teams` profile fields for slugs, flag metadata, source notes, and provider payloads.
 - Added live statistics to the match comparison table.
 - Auto-refresh match data while viewing the live feed.
 - Matched live provider fixtures more reliably by normalizing country/team aliases.

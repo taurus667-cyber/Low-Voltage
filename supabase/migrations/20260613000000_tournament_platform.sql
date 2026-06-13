@@ -42,13 +42,26 @@ create table if not exists public.teams (
   provider text not null default 'API-Football',
   provider_team_id text not null,
   name text not null,
+  slug text,
   logo_url text,
   country text,
+  country_code text,
+  flag_url text,
+  source_url text,
+  source_checked_at date,
+  profile_payload jsonb not null default '{}'::jsonb,
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now(),
   unique(tournament_id, provider, provider_team_id)
 );
+
+alter table public.teams add column if not exists slug text;
+alter table public.teams add column if not exists country_code text;
+alter table public.teams add column if not exists flag_url text;
+alter table public.teams add column if not exists source_url text;
+alter table public.teams add column if not exists source_checked_at date;
+alter table public.teams add column if not exists profile_payload jsonb not null default '{}'::jsonb;
 
 create table if not exists public.match_events (
   id uuid primary key default gen_random_uuid(),
@@ -135,6 +148,7 @@ create index if not exists idx_match_statistics_match_id on public.match_statist
 create index if not exists idx_match_lineups_match_id on public.match_lineups (match_id);
 create index if not exists idx_match_prediction_aids_match_id on public.match_prediction_aids (match_id);
 create index if not exists idx_match_odds_match_id on public.match_odds (match_id);
+create index if not exists idx_teams_slug on public.teams (slug);
 
 drop trigger if exists set_tournaments_updated_at on public.tournaments;
 create trigger set_tournaments_updated_at

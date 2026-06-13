@@ -5,6 +5,7 @@ import {
   getRequiredServerEnv,
   isAuthorized,
 } from './api-football.js';
+import { getTeamMetadata, slugifyTeamName } from '../src/lib/teamMetadata.js';
 
 const LOOKAHEAD_DAYS = 14;
 
@@ -61,16 +62,30 @@ async function ensureTournamentTeams(supabase, tournament, apiKey) {
     league: tournament.api_football_league_id,
     season: tournament.api_football_season,
   }, apiKey);
-  const rows = teams.map((row) => ({
-    tournament_id: tournament.id || null,
-    provider: 'API-Football',
-    provider_team_id: String(row.team?.id || ''),
-    name: row.team?.name || 'Unknown',
-    logo_url: row.team?.logo || null,
-    country: row.team?.country || null,
-    last_synced_at: new Date().toISOString(),
-  })).filter((row) => row.provider_team_id);
+  const rows = normalizeProviderTeams(teams, tournament);
   await upsertRows(supabase, 'teams', rows, 'tournament_id,provider,provider_team_id');
+}
+
+export function normalizeProviderTeams(teams, tournament = {}, now = new Date()) {
+  return teams.map((row) => {
+    const name = row.team?.name || 'Unknown';
+    const metadata = getTeamMetadata(name);
+    return {
+      tournament_id: tournament.id || null,
+      provider: 'API-Football',
+      provider_team_id: String(row.team?.id || ''),
+      name,
+      slug: metadata?.slug || slugifyTeamName(name),
+      logo_url: row.team?.logo || null,
+      country: row.team?.country || metadata?.name || null,
+      country_code: metadata?.country_code || null,
+      flag_url: metadata?.flag_url || null,
+      source_url: metadata?.source_url || null,
+      source_checked_at: metadata?.source_checked_at || null,
+      profile_payload: row,
+      last_synced_at: now.toISOString(),
+    };
+  }).filter((row) => row.provider_team_id);
 }
 
 async function fetchUpcomingMatches(supabase, tournament) {

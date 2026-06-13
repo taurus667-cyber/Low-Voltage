@@ -52,6 +52,10 @@ try {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json([]));
   });
+  await page.route('**/rest/v1/teams*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json(smokeTeams()));
+  });
   await page.route('**/rest/v1/match_events*', async (route) => {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json(smokeEvents()));
@@ -81,20 +85,27 @@ try {
     await page.getByRole('button', { name: 'Continue' }).click();
     await expectVisible(page, 'text=Live now');
     await expectVisible(page, 'text=Canada');
+    await expectVisible(page, 'img[alt="Canada flag"]');
     await expectVisible(page, 'text=Live: 1 - 0');
     await expectVisible(page, 'text=Smoke Striker');
     await expectVisible(page, 'text=Match stats');
     await expectVisible(page, 'text=Shots on target');
     await expectVisible(page, 'text=Predictions are closed because kickoff time has passed.');
     await expectVisible(page, 'text=Played (1)');
+    await page.getByTitle('Open Canada profile').first().click();
+    await expectVisible(page, 'text=API-Football profile');
+    await expectVisible(page, 'text=Fixtures and results');
+    await page.goto(`${baseUrl}/groups`, { waitUntil: 'networkidle' });
+    await expectVisible(page, 'text=Group A');
+    await expectVisible(page, 'text=Standings are calculated');
   } else {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await expectVisible(page, 'text=Matches');
   }
 
-  for (const route of ['/predictions', '/leaderboard', '/admin']) {
+  for (const route of ['/predictions', '/groups', '/leaderboard', '/admin']) {
     await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
-    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
+    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/groups' ? 'text=Groups' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
   }
 
   if (isProdSmoke) {
@@ -166,6 +177,7 @@ function smokeMatches() {
       team_a: 'Spain',
       team_b: 'Japan',
       kickoff_time: old,
+      group_name: 'Group A',
       stage: 'Group Stage',
       team_a_score: 2,
       team_b_score: 1,
@@ -187,6 +199,39 @@ function smokeTournament() {
     branding_text: 'Private friends group',
     is_active: true,
   };
+}
+
+function smokeTeams() {
+  return [{
+    id: 'team-canada',
+    tournament_id: 'tournament-smoke',
+    provider: 'API-Football',
+    provider_team_id: '1',
+    name: 'Canada',
+    slug: 'canada',
+    logo_url: 'https://media.api-sports.io/football/teams/5529.png',
+    country: 'Canada',
+    country_code: 'ca',
+    flag_url: 'https://flagcdn.com/w80/ca.png',
+    source_url: 'https://flagcdn.com/',
+    source_checked_at: '2026-06-13',
+    profile_payload: { team: { name: 'Canada' } },
+    last_synced_at: new Date().toISOString(),
+  }, {
+    id: 'team-mexico',
+    tournament_id: 'tournament-smoke',
+    provider: 'API-Football',
+    provider_team_id: '2',
+    name: 'Mexico',
+    slug: 'mexico',
+    country: 'Mexico',
+    country_code: 'mx',
+    flag_url: 'https://flagcdn.com/w80/mx.png',
+    source_url: 'https://flagcdn.com/',
+    source_checked_at: '2026-06-13',
+    profile_payload: { team: { name: 'Mexico' } },
+    last_synced_at: new Date().toISOString(),
+  }];
 }
 
 function smokeEvents() {

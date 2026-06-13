@@ -93,13 +93,38 @@ create table if not exists public.teams (
   provider text not null default 'API-Football',
   provider_team_id text not null,
   name text not null,
+  slug text,
   logo_url text,
   country text,
+  country_code text,
+  flag_url text,
+  source_url text,
+  source_checked_at date,
+  profile_payload jsonb not null default '{}'::jsonb,
   last_synced_at timestamp with time zone,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now(),
   unique(tournament_id, provider, provider_team_id)
 );
+
+create table if not exists public.player_favorite_teams (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid references public.tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  team_slug text not null,
+  team_name text not null,
+  country_code text,
+  flag_url text,
+  created_at timestamp with time zone default now(),
+  unique(player_id, team_slug)
+);
+
+alter table public.teams add column if not exists slug text;
+alter table public.teams add column if not exists country_code text;
+alter table public.teams add column if not exists flag_url text;
+alter table public.teams add column if not exists source_url text;
+alter table public.teams add column if not exists source_checked_at date;
+alter table public.teams add column if not exists profile_payload jsonb not null default '{}'::jsonb;
 
 create table if not exists public.match_events (
   id uuid primary key default gen_random_uuid(),
@@ -172,6 +197,20 @@ create table if not exists public.match_odds (
   unique(match_id, provider, bookmaker, market)
 );
 
+create table if not exists public.standings_checks (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid references public.tournaments(id) on delete set null,
+  tournament_slug text,
+  status text not null check (status in ('confirmed', 'mismatch', 'provider_unavailable')),
+  app_standings jsonb not null default '[]'::jsonb,
+  provider_standings jsonb not null default '[]'::jsonb,
+  provider_payload jsonb not null default '[]'::jsonb,
+  mismatches jsonb not null default '[]'::jsonb,
+  error_message text,
+  checked_at timestamp with time zone not null default now(),
+  created_at timestamp with time zone not null default now()
+);
+
 create index if not exists idx_players_name on public.players (lower(name));
 create unique index if not exists idx_players_tournament_active_name_unique
 on public.players (tournament_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')))
@@ -190,6 +229,9 @@ create index if not exists idx_match_statistics_match_id on public.match_statist
 create index if not exists idx_match_lineups_match_id on public.match_lineups (match_id);
 create index if not exists idx_match_prediction_aids_match_id on public.match_prediction_aids (match_id);
 create index if not exists idx_match_odds_match_id on public.match_odds (match_id);
+create index if not exists idx_teams_slug on public.teams (slug);
+create index if not exists idx_player_favorite_teams_player_id on public.player_favorite_teams (player_id);
+create index if not exists idx_standings_checks_tournament_checked_at on public.standings_checks (tournament_id, checked_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -261,11 +303,13 @@ alter table public.tournaments enable row level security;
 alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
 alter table public.teams enable row level security;
+alter table public.player_favorite_teams enable row level security;
 alter table public.match_events enable row level security;
 alter table public.match_statistics enable row level security;
 alter table public.match_lineups enable row level security;
 alter table public.match_prediction_aids enable row level security;
 alter table public.match_odds enable row level security;
+alter table public.standings_checks enable row level security;
 
 drop policy if exists "tournaments_select_all" on public.tournaments;
 create policy "tournaments_select_all" on public.tournaments for select using (true);
@@ -293,6 +337,12 @@ create policy "predictions_select_all" on public.predictions for select using (t
 
 drop policy if exists "teams_select_all" on public.teams;
 create policy "teams_select_all" on public.teams for select using (true);
+drop policy if exists "player_favorite_teams_select_all" on public.player_favorite_teams;
+create policy "player_favorite_teams_select_all" on public.player_favorite_teams for select using (true);
+drop policy if exists "player_favorite_teams_insert_all" on public.player_favorite_teams;
+create policy "player_favorite_teams_insert_all" on public.player_favorite_teams for insert with check (true);
+drop policy if exists "player_favorite_teams_delete_all" on public.player_favorite_teams;
+create policy "player_favorite_teams_delete_all" on public.player_favorite_teams for delete using (true);
 drop policy if exists "match_events_select_all" on public.match_events;
 create policy "match_events_select_all" on public.match_events for select using (true);
 drop policy if exists "match_statistics_select_all" on public.match_statistics;
