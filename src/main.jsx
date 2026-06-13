@@ -583,12 +583,7 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
     ['Goal', 'Card', 'subst', 'Var'].some((type) => String(event.event_type || '').toLowerCase().includes(type.toLowerCase())),
   );
   const goalEvents = events.filter((event) => /goal/i.test(event.event_type || '') || /goal/i.test(event.event_detail || ''));
-  const visibleStats = statistics.flatMap((row) =>
-    Object.entries(row.statistics || {})
-      .filter(([, value]) => value !== null && value !== undefined)
-      .slice(0, 5)
-      .map(([label, value]) => ({ team: row.team_name, label, value })),
-  ).slice(0, 8);
+  const statComparison = buildStatComparison(statistics);
 
   return (
     <details className="match-centre" open>
@@ -613,14 +608,27 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
           </div>
         </div>
       )}
-      {visibleStats.length > 0 && (
-        <div className="stat-grid">
-          {visibleStats.map((stat) => (
-            <span key={`${stat.team}-${stat.label}`}>
-              <strong>{stat.label}</strong>
-              {stat.team}: {String(stat.value)}
-            </span>
-          ))}
+      {statComparison.rows.length > 0 && (
+        <div className="stats-table-wrap">
+          <strong>Match stats</strong>
+          <table className="stats-table">
+            <thead>
+              <tr>
+                <th>{statComparison.teams[0] || 'Team A'}</th>
+                <th>Stat</th>
+                <th>{statComparison.teams[1] || 'Team B'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statComparison.rows.map((row) => (
+                <tr key={row.label}>
+                  <td>{formatStatValue(row.values[0])}</td>
+                  <th scope="row">{formatStatLabel(row.label)}</th>
+                  <td>{formatStatValue(row.values[1])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {lineups.length > 0 && (
@@ -635,6 +643,49 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
       )}
     </details>
   );
+}
+
+function buildStatComparison(statistics) {
+  const teams = statistics.map((row) => row.team_name).filter(Boolean).slice(0, 2);
+  const labels = [];
+  const valuesByTeam = new Map();
+  statistics.slice(0, 2).forEach((teamRow) => {
+    const teamValues = new Map();
+    Object.entries(teamRow.statistics || {}).forEach(([label, value]) => {
+      if (value === null || value === undefined || value === '') return;
+      if (!labels.includes(label)) labels.push(label);
+      teamValues.set(label, value);
+    });
+    valuesByTeam.set(teamRow.team_name, teamValues);
+  });
+  const priority = [
+    'Ball Possession',
+    'Total Shots',
+    'Shots on Goal',
+    'Corner Kicks',
+    'Fouls',
+    'Offsides',
+    'Yellow Cards',
+    'Red Cards',
+    'Passes %',
+  ];
+  const orderedLabels = labels
+    .sort((a, b) => {
+      const aIndex = priority.indexOf(a);
+      const bIndex = priority.indexOf(b);
+      if (aIndex !== -1 || bIndex !== -1) {
+        return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+      }
+      return a.localeCompare(b);
+    })
+    .slice(0, 9);
+  return {
+    teams,
+    rows: orderedLabels.map((label) => ({
+      label,
+      values: teams.map((team) => valuesByTeam.get(team)?.get(label)),
+    })),
+  };
 }
 
 function PredictionAid({ match, aids, odds, lineups, itemCount }) {
@@ -1365,6 +1416,20 @@ function formatEventDetail(detail) {
   if (/yellow card/i.test(value)) return 'Yellow card';
   if (/red card/i.test(value)) return 'Red card';
   return formatSentenceFragment(value);
+}
+
+function formatStatLabel(label) {
+  const labels = {
+    'Ball Possession': 'Possession',
+    'Shots on Goal': 'Shots on target',
+    'Passes %': 'Pass accuracy',
+  };
+  return labels[label] || formatSentenceFragment(label);
+}
+
+function formatStatValue(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  return String(value);
 }
 
 function formatSentenceFragment(value) {

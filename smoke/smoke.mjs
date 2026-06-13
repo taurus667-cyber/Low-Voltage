@@ -83,7 +83,8 @@ try {
     await expectVisible(page, 'text=Canada');
     await expectVisible(page, 'text=Live: 1 - 0');
     await expectVisible(page, 'text=Smoke Striker');
-    await expectVisible(page, 'text=Shots on Goal');
+    await expectVisible(page, 'text=Match stats');
+    await expectVisible(page, 'text=Shots on target');
     await expectVisible(page, 'text=Predictions are closed because kickoff time has passed.');
     await expectVisible(page, 'text=Played (1)');
   } else {

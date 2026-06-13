@@ -502,7 +502,6 @@ h2 {
   font-size: 0.9rem;
 }
 
-.stat-grid,
 .aid-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -510,7 +509,6 @@ h2 {
   margin-top: 0.85rem;
 }
 
-.stat-grid span,
 .aid-grid article {
   display: grid;
   gap: 0.25rem;
@@ -520,6 +518,59 @@ h2 {
   padding: 0.65rem;
   color: #315b52;
   font-size: 0.9rem;
+}
+
+.stats-table-wrap {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  overflow-x: auto;
+}
+
+.stats-table-wrap > strong {
+  color: #315b52;
+}
+
+.stats-table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #315b52;
+  font-size: 0.9rem;
+}
+
+.stats-table th,
+.stats-table td {
+  border-bottom: 1px solid #e3eee9;
+  padding: 0.55rem 0.65rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.stats-table thead th {
+  background: #eef7f3;
+  color: #163f38;
+  font-weight: 900;
+}
+
+.stats-table tbody th {
+  width: 34%;
+  color: #63766f;
+  font-weight: 800;
+}
+
+.stats-table td {
+  width: 33%;
+  font-weight: 900;
+}
+
+.stats-table tbody tr:last-child th,
+.stats-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .aid-grid small {
