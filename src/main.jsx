@@ -653,7 +653,7 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
         {odds.slice(0, 3).map((odd) => (
           <article key={odd.id} className="odds-card">
             <strong>{odd.bookmaker || 'Bookmaker odds'}</strong>
-            <span className="aid-caption">{odd.market || 'Match winner'}</span>
+            <span className="aid-caption">{formatMarketName(odd.market)}</span>
             <div className="odds-options">
               {buildOddsOptions(odd, match).map((option) => (
                 <span key={option.key} className={option.isFavorite ? 'favorite' : ''}>
@@ -669,7 +669,7 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
         {aids.map((aid) => (
           <article key={aid.id}>
             <strong>{formatAidTitle(aid)}</strong>
-            <span>{aid.summary || 'Data available'}</span>
+            <span>{formatAidSummary(aid.summary)}</span>
             {aid.last_synced_at && <small>Synced {formatDate(aid.last_synced_at)}</small>}
           </article>
         ))}
@@ -723,7 +723,7 @@ function buildOddsOptions(odd, match) {
       ...option,
       decimal,
       odd: decimal ? formatOdd(decimal) : '-',
-      probability: decimal ? `${Math.round((1 / decimal) * 100)}% implied` : '',
+      probability: decimal ? `about ${Math.round((1 / decimal) * 100)}% chance` : '',
     };
   });
   const favoriteDecimal = Math.min(...options.map((option) => option.decimal || Infinity));
@@ -755,9 +755,9 @@ function EventChip({ event }) {
     <span>
       <strong>{minute}</strong>
       {event.team_name ? `${event.team_name}: ` : ''}
-      {event.player_name || event.event_type}
+      {event.player_name || formatEventType(event.event_type)}
       {assist}
-      {event.event_detail ? ` (${event.event_detail})` : ''}
+      {event.event_detail ? ` (${formatEventDetail(event.event_detail)})` : ''}
     </span>
   );
 }
@@ -1312,7 +1312,50 @@ function formatAidTitle(aid) {
   if (aid.aid_type === 'api_prediction' || /api prediction/i.test(aid.title || '')) {
     return 'Prediction outlook';
   }
+  if (aid.aid_type === 'head_to_head') return 'Recent meetings';
+  if (aid.aid_type === 'injuries') return 'Team news';
   return aid.title;
+}
+
+function formatAidSummary(summary) {
+  const value = String(summary || '').trim();
+  if (!value) return 'Data available.';
+  if (/^no predictions available$/i.test(value)) return 'No clear prediction is available yet.';
+  const doubleChance = value.match(/^double chance\s*:\s*(.+)$/i);
+  if (doubleChance) return `Safer pick: ${formatSentenceFragment(doubleChance[1])}.`;
+  return formatSentenceFragment(value);
+}
+
+function formatMarketName(market) {
+  if (/^match winner$/i.test(String(market || ''))) return 'Winner odds';
+  return formatSentenceFragment(market || 'Match odds');
+}
+
+function formatEventType(type) {
+  const value = String(type || '').trim();
+  if (/^subst$/i.test(value) || /substitution/i.test(value)) return 'Substitution';
+  if (/^var$/i.test(value)) return 'Video review';
+  return formatSentenceFragment(value || 'Event');
+}
+
+function formatEventDetail(detail) {
+  const value = String(detail || '').trim();
+  if (/normal goal/i.test(value)) return 'Goal';
+  if (/own goal/i.test(value)) return 'Own goal';
+  if (/penalty/i.test(value) && /missed/i.test(value)) return 'Missed penalty';
+  if (/penalty/i.test(value)) return 'Penalty';
+  if (/yellow card/i.test(value)) return 'Yellow card';
+  if (/red card/i.test(value)) return 'Red card';
+  return formatSentenceFragment(value);
+}
+
+function formatSentenceFragment(value) {
+  const cleaned = String(value || '')
+    .replace(/\s+:\s+/g, ': ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 async function optionalSelect(query) {
