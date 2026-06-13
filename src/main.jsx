@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
 import { calculateLeaderboard, isFinalScoreComplete } from './lib/scoring.js';
@@ -38,7 +38,7 @@ function App() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!isSupabaseConfigured) return;
     setLoading(true);
     setError('');
@@ -71,11 +71,11 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
   const navigate = (nextRoute) => {
     window.history.pushState({}, '', nextRoute);
@@ -324,6 +324,14 @@ function MatchesPage({
     () => calculateLiveLeaderboard(players, matches, predictions),
     [players, matches, predictions],
   );
+
+  useEffect(() => {
+    if (!currentPlayer || !isPlayerActive(currentPlayer)) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 30000);
+    return () => window.clearInterval(intervalId);
+  }, [currentPlayer, refresh]);
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} />;
