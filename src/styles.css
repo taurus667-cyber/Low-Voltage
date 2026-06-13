@@ -283,6 +283,10 @@ h2 {
   padding: 0.85rem;
 }
 
+.picks-summary.expanded {
+  grid-column: 1 / -1;
+}
+
 .dashboard-item div:first-child {
   display: grid;
   gap: 0.25rem;
@@ -311,6 +315,35 @@ h2 {
   gap: 0.65rem;
   border-top: 1px solid #d6e4df;
   padding-top: 0.75rem;
+}
+
+.picks-expanded .table-wrap {
+  width: 100%;
+}
+
+.picks-table {
+  min-width: 680px;
+}
+
+.picks-table th,
+.picks-table td {
+  padding: 0.85rem 1rem;
+}
+
+.picks-table:not(.live-picks-table) th:first-child,
+.picks-table:not(.live-picks-table) td:first-child {
+  width: 45%;
+}
+
+.picks-table:not(.live-picks-table) th:nth-child(2),
+.picks-table:not(.live-picks-table) td:nth-child(2) {
+  width: 22%;
+}
+
+.picks-table:not(.live-picks-table) th:last-child,
+.picks-table:not(.live-picks-table) td:last-child {
+  width: 33%;
+  white-space: nowrap;
 }
 
 .picks-expanded p {

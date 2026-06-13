@@ -1314,6 +1314,7 @@ function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, 
 function PredictionsPage({ players, matches, predictions, teams, refresh, navigate }) {
   const [matchView, setMatchView] = useState('upcoming');
   const [expandedMatchIds, setExpandedMatchIds] = useState(() => new Set());
+  const [refreshState, setRefreshState] = useState('idle');
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
   const activePlayerCount = useMemo(
     () => players.filter((player) => isPlayerActive(player)).length,
@@ -1367,10 +1368,27 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
       return next;
     });
   };
+  const handleRefresh = async () => {
+    if (refreshState === 'refreshing') return;
+    setRefreshState('refreshing');
+    try {
+      await refresh();
+      setRefreshState('done');
+    } catch (err) {
+      setRefreshState('idle');
+    }
+  };
 
   return (
     <section>
-      <PageTitle title="Picks" action={<button onClick={refresh}>Refresh</button>} />
+      <PageTitle
+        title="Picks"
+        action={
+          <button onClick={handleRefresh} disabled={refreshState === 'refreshing'}>
+            {refreshState === 'refreshing' ? 'Refreshing...' : 'Refresh'}
+          </button>
+        }
+      />
       {liveMatches.length > 0 && (
         <section className="live-section" aria-labelledby="live-picks-title">
           <div className="section-heading">
@@ -1459,7 +1477,7 @@ function PicksMatchSummary({
   const percent = activePlayerCount ? Math.round((activeSubmittedCount / activePlayerCount) * 100) : 0;
 
   return (
-    <article className={`dashboard-item picks-summary${live ? ' live-card' : ''}`}>
+    <article className={`dashboard-item picks-summary${live ? ' live-card' : ''}${expanded ? ' expanded' : ''}`}>
       <div className="picks-summary-main">
         <div>
           <div className="dashboard-match-teams">
@@ -1525,7 +1543,7 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
       )}
       {matchPredictions.length > 0 && (
         <div className="table-wrap compact-table">
-          <table>
+          <table className={`picks-table${hasLiveScore ? ' live-picks-table' : ''}`}>
             <thead>
               <tr>
                 {hasLiveScore && <th>Rank</th>}
