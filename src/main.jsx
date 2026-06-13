@@ -500,7 +500,7 @@ function PredictionCard({
           {liveScore && <strong>Live: {liveScore}</strong>}
           {match.live_minute !== null && match.live_minute !== undefined && <span>{match.live_minute}'</span>}
           {match.live_status_note && <span>{match.live_status_note}</span>}
-          {match.live_source && <span>{match.live_source}</span>}
+          {match.live_source && <span>{formatPublicSource(match.live_source)}</span>}
           {match.last_synced_at && <span>Synced {formatDate(match.last_synced_at)}</span>}
         </div>
       )}
@@ -634,14 +634,14 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
   if (!itemCount) {
     return (
       <div className="prediction-aid-status">
-        <strong>API-Football aid</strong>
-        <span>Waiting for provider data for this match.</span>
+        <strong>Match insight</strong>
+        <span>Waiting for match data for this game.</span>
       </div>
     );
   }
   return (
     <details className="prediction-aid" open>
-      <summary>Prediction aid - API-Football - {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
+      <summary>Match insight - latest data - {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
       {oddsInsight && (
         <div className="odds-summary">
           <strong>Market view</strong>
@@ -668,7 +668,7 @@ function PredictionAid({ match, aids, odds, lineups, itemCount }) {
         ))}
         {aids.map((aid) => (
           <article key={aid.id}>
-            <strong>{aid.title}</strong>
+            <strong>{formatAidTitle(aid)}</strong>
             <span>{aid.summary || 'Data available'}</span>
             {aid.last_synced_at && <small>Synced {formatDate(aid.last_synced_at)}</small>}
           </article>
@@ -1301,6 +1301,18 @@ function toLocalInputValue(value) {
 
 function throwIfError(error) {
   if (error) throw error;
+}
+
+function formatPublicSource(source) {
+  if (/api/i.test(String(source || ''))) return 'Live data';
+  return source;
+}
+
+function formatAidTitle(aid) {
+  if (aid.aid_type === 'api_prediction' || /api prediction/i.test(aid.title || '')) {
+    return 'Prediction outlook';
+  }
+  return aid.title;
 }
 
 async function optionalSelect(query) {
