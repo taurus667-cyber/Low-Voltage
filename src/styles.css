@@ -402,6 +402,67 @@ h2 {
   font-weight: 900;
 }
 
+.odds-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+  margin-top: 0.75rem;
+  border: 1px solid #cfe0da;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #315b52;
+  padding: 0.65rem 0.75rem;
+}
+
+.odds-summary strong {
+  color: #0f766e;
+}
+
+.odds-summary small,
+.aid-caption {
+  color: #63766f;
+}
+
+.odds-card {
+  grid-column: span 2;
+}
+
+.odds-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.odds-options span {
+  display: grid;
+  gap: 0.15rem;
+  align-content: start;
+  min-width: 0;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #f7fbf9;
+  padding: 0.5rem;
+}
+
+.odds-options span.favorite {
+  border-color: #0f766e;
+  background: #e6f5ef;
+}
+
+.odds-options small,
+.odds-options em {
+  color: #63766f;
+  font-size: 0.76rem;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+.odds-options strong {
+  color: #163f38;
+  font-size: 1.05rem;
+}
+
 .live-points-row,
 .lineup-row {
   display: flex;

@@ -514,7 +514,7 @@ function PredictionCard({
         />
       )}
       {!live && isMatchUpcoming(match) && (
-        <PredictionAid aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
+        <PredictionAid match={match} aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
       )}
       {hasResult && (
         <p className="result">
@@ -629,7 +629,8 @@ function MatchCentre({ events, statistics, lineups, currentPredictionPoints, liv
   );
 }
 
-function PredictionAid({ aids, odds, lineups, itemCount }) {
+function PredictionAid({ match, aids, odds, lineups, itemCount }) {
+  const oddsInsight = buildOddsInsight(odds, match);
   if (!itemCount) {
     return (
       <div className="prediction-aid-status">
@@ -640,12 +641,28 @@ function PredictionAid({ aids, odds, lineups, itemCount }) {
   }
   return (
     <details className="prediction-aid" open>
-      <summary>Prediction aid · API-Football · {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
+      <summary>Prediction aid - API-Football - {itemCount} item{itemCount === 1 ? '' : 's'}</summary>
+      {oddsInsight && (
+        <div className="odds-summary">
+          <strong>Market view</strong>
+          <span>{oddsInsight.favoriteLabel} is favored by the available odds.</span>
+          {oddsInsight.syncedAt && <small>Odds synced {formatDate(oddsInsight.syncedAt)}</small>}
+        </div>
+      )}
       <div className="aid-grid">
-        {odds.slice(0, 2).map((odd) => (
-          <article key={odd.id}>
-            <strong>{odd.bookmaker || 'Odds'}</strong>
-            <span>{odd.market}: {odd.home_value || '-'} / {odd.draw_value || '-'} / {odd.away_value || '-'}</span>
+        {odds.slice(0, 3).map((odd) => (
+          <article key={odd.id} className="odds-card">
+            <strong>{odd.bookmaker || 'Bookmaker odds'}</strong>
+            <span className="aid-caption">{odd.market || 'Match winner'}</span>
+            <div className="odds-options">
+              {buildOddsOptions(odd, match).map((option) => (
+                <span key={option.key} className={option.isFavorite ? 'favorite' : ''}>
+                  <small>{option.label}</small>
+                  <strong>{option.odd}</strong>
+                  {option.probability && <em>{option.probability}</em>}
+                </span>
+              ))}
+            </div>
             {odd.last_synced_at && <small>Synced {formatDate(odd.last_synced_at)}</small>}
           </article>
         ))}
@@ -666,6 +683,67 @@ function PredictionAid({ aids, odds, lineups, itemCount }) {
       </div>
     </details>
   );
+}
+
+function buildOddsInsight(odds, match) {
+  const rows = odds
+    .map((odd) => ({
+      home: parseDecimalOdd(odd.home_value),
+      draw: parseDecimalOdd(odd.draw_value),
+      away: parseDecimalOdd(odd.away_value),
+      syncedAt: odd.last_synced_at,
+    }))
+    .filter((row) => row.home && row.draw && row.away);
+  if (!rows.length) return null;
+  const averages = {
+    home: average(rows.map((row) => row.home)),
+    draw: average(rows.map((row) => row.draw)),
+    away: average(rows.map((row) => row.away)),
+  };
+  const favoriteKey = Object.entries(averages).sort(([, a], [, b]) => a - b)[0]?.[0];
+  const labels = {
+    home: match.team_a,
+    draw: 'Draw',
+    away: match.team_b,
+  };
+  return {
+    favoriteLabel: labels[favoriteKey] || 'A team',
+    syncedAt: rows.map((row) => row.syncedAt).filter(Boolean).sort().at(-1),
+  };
+}
+
+function buildOddsOptions(odd, match) {
+  const options = [
+    { key: 'home', label: `${match.team_a} win`, value: odd.home_value },
+    { key: 'draw', label: 'Draw', value: odd.draw_value },
+    { key: 'away', label: `${match.team_b} win`, value: odd.away_value },
+  ].map((option) => {
+    const decimal = parseDecimalOdd(option.value);
+    return {
+      ...option,
+      decimal,
+      odd: decimal ? formatOdd(decimal) : '-',
+      probability: decimal ? `${Math.round((1 / decimal) * 100)}% implied` : '',
+    };
+  });
+  const favoriteDecimal = Math.min(...options.map((option) => option.decimal || Infinity));
+  return options.map((option) => ({
+    ...option,
+    isFavorite: option.decimal === favoriteDecimal,
+  }));
+}
+
+function parseDecimalOdd(value) {
+  const parsed = Number.parseFloat(String(value || '').replace(',', '.'));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatOdd(value) {
+  return value.toFixed(2).replace(/\.00$/, '');
+}
+
+function average(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function EventChip({ event }) {
