@@ -10,6 +10,7 @@ import {
 
 const ACTIVE_BEFORE_MINUTES = 30;
 const ACTIVE_AFTER_MINUTES = 180;
+const RECAP_BACKFILL_AFTER_MINUTES = 24 * 60;
 
 export { isAuthorized };
 
@@ -39,7 +40,7 @@ export default async function handler(request, response) {
     const eventRows = [];
     const statisticRows = [];
     const lineupRows = [];
-    for (const match of matches) {
+    for (const match of matches.filter((match) => shouldFetchMatchDetails(match, now))) {
       const providerFixtureId = match.live_source_match_id || findProviderFixture(match, providerFixtures)?.fixture?.id;
       if (!providerFixtureId) continue;
       const [events, statistics, lineups] = await Promise.all([
@@ -71,8 +72,7 @@ export default async function handler(request, response) {
 }
 
 async function fetchActiveMatches(supabase, tournament, now) {
-  const from = new Date(now.getTime() - ACTIVE_AFTER_MINUTES * 60 * 1000).toISOString();
-  const to = new Date(now.getTime() + ACTIVE_BEFORE_MINUTES * 60 * 1000).toISOString();
+  const { from, to } = getLiveSyncWindow(now);
   let query = supabase
     .from('matches')
     .select('*')
@@ -84,6 +84,23 @@ async function fetchActiveMatches(supabase, tournament, now) {
   const { data, error } = await query;
   if (error) throw error;
   return data || [];
+}
+
+export function getLiveSyncWindow(now = new Date()) {
+  return {
+    from: new Date(now.getTime() - RECAP_BACKFILL_AFTER_MINUTES * 60 * 1000).toISOString(),
+    to: new Date(now.getTime() + ACTIVE_BEFORE_MINUTES * 60 * 1000).toISOString(),
+  };
+}
+
+export function shouldFetchMatchDetails(match, now = new Date()) {
+  if (match.status !== 'finished') return true;
+  if (!match.live_source_match_id) return true;
+
+  const kickoff = new Date(match.kickoff_time).getTime();
+  if (Number.isNaN(kickoff)) return false;
+  const activeAfterMs = ACTIVE_AFTER_MINUTES * 60 * 1000;
+  return now.getTime() - kickoff <= activeAfterMs;
 }
 
 async function fetchProviderFixtures(apiKey, tournament, matches) {

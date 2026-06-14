@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   buildMatchUpdates,
   findProviderFixture,
+  getLiveSyncWindow,
   isAuthorized,
   normalizeProviderEvents,
   normalizeProviderStatistics,
+  shouldFetchMatchDetails,
 } from './sync-live-scores.js';
 
 test('sync endpoint rejects missing or invalid cron secret', () => {
@@ -127,6 +129,39 @@ test('provider fixture matching handles common country aliases', () => {
   );
 
   assert.equal(fixture.fixture.id, 1489370);
+});
+
+test('provider fixture matching handles Turkey spelling variants', () => {
+  const fixture = findProviderFixture(
+    {
+      team_a: 'Australia',
+      team_b: 'Turkiye',
+      kickoff_time: '2026-06-14T04:00:00Z',
+    },
+    [{
+      fixture: { id: 1489371, date: '2026-06-14T04:00:00+00:00' },
+      teams: { home: { name: 'Australia' }, away: { name: 'Turkey' } },
+    }],
+  );
+
+  assert.equal(fixture.fixture.id, 1489371);
+});
+
+test('live sync keeps a recap backfill window for recently finished matches', () => {
+  const window = getLiveSyncWindow(new Date('2026-06-14T12:00:00Z'));
+
+  assert.equal(window.from, '2026-06-13T12:00:00.000Z');
+  assert.equal(window.to, '2026-06-14T12:30:00.000Z');
+  assert.equal(shouldFetchMatchDetails({
+    status: 'finished',
+    kickoff_time: '2026-06-14T04:00:00Z',
+    live_source_match_id: null,
+  }, new Date('2026-06-14T12:00:00Z')), true);
+  assert.equal(shouldFetchMatchDetails({
+    status: 'finished',
+    kickoff_time: '2026-06-14T04:00:00Z',
+    live_source_match_id: '1489371',
+  }, new Date('2026-06-15T12:00:00Z')), false);
 });
 
 test('normalizes live goal and card events', () => {
