@@ -13,62 +13,66 @@ const LOOKAHEAD_DAYS = 14;
 export default async function handler(request, response) {
   if (!isAuthorized(request)) return response.status(401).json({ error: 'Unauthorized' });
 
-  const required = getRequiredServerEnv();
-  if (required.error) return response.status(500).json({ error: required.error });
-
   try {
-    const supabase = createClient(required.supabaseUrl, required.serviceRoleKey, {
-      auth: { persistSession: false },
-    });
-    const tournament = await getActiveTournament(supabase);
-    await ensureTournamentTeams(supabase, tournament, required.apiFootballKey);
-    const matches = await fetchUpcomingMatches(supabase, tournament);
-    const now = new Date();
-
-    const aids = [];
-    const oddsRows = [];
-    const fixtureUpdates = [];
-    for (const match of matches) {
-      const providerFixture = match.live_source_match_id
-        ? null
-        : await findFixture(match, tournament, required.apiFootballKey);
-      const providerFixtureId = match.live_source_match_id || providerFixture?.fixture?.id;
-      if (!providerFixtureId) continue;
-      const teamASourceId = match.team_a_source_id || String(providerFixture?.teams?.home?.id || '');
-      const teamBSourceId = match.team_b_source_id || String(providerFixture?.teams?.away?.id || '');
-      if (providerFixture) fixtureUpdates.push(buildFixtureLinkUpdate(match, providerFixture, now));
-
-      const [predictions, h2h, injuries, odds] = await Promise.all([
-        fetchApiFootball('/predictions', { fixture: providerFixtureId }, required.apiFootballKey),
-        teamASourceId && teamBSourceId
-          ? fetchApiFootball('/fixtures/headtohead', { h2h: `${teamASourceId}-${teamBSourceId}`, last: 5 }, required.apiFootballKey)
-          : Promise.resolve([]),
-        fetchApiFootball('/injuries', { fixture: providerFixtureId }, required.apiFootballKey),
-        fetchApiFootball('/odds', { fixture: providerFixtureId }, required.apiFootballKey),
-      ]);
-
-      aids.push(...normalizePredictionAids(match, { predictions, h2h, injuries }, tournament, now));
-      oddsRows.push(...normalizeOdds(match, odds, tournament, now));
-    }
-
-    for (const update of fixtureUpdates) {
-      const { id, ...payload } = update;
-      const { error } = await supabase.from('matches').update(payload).eq('id', id);
-      if (error) throw error;
-    }
-    await upsertRows(supabase, 'match_prediction_aids', aids, 'match_id,provider,aid_type');
-    await upsertRows(supabase, 'match_odds', oddsRows, 'match_id,provider,bookmaker,market');
-
-    return response.status(200).json({
-      tournament: tournament.slug,
-      matches: matches.length,
-      linkedFixtures: fixtureUpdates.length,
-      aids: aids.length,
-      odds: oddsRows.length,
-    });
+    return response.status(200).json(await runPrematchSync());
   } catch (error) {
     return response.status(500).json({ error: error.message || 'Pre-match sync failed.' });
   }
+}
+
+export async function runPrematchSync() {
+  const required = getRequiredServerEnv();
+  if (required.error) throw new Error(required.error);
+
+  const supabase = createClient(required.supabaseUrl, required.serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const tournament = await getActiveTournament(supabase);
+  await ensureTournamentTeams(supabase, tournament, required.apiFootballKey);
+  const matches = await fetchUpcomingMatches(supabase, tournament);
+  const now = new Date();
+
+  const aids = [];
+  const oddsRows = [];
+  const fixtureUpdates = [];
+  for (const match of matches) {
+    const providerFixture = match.live_source_match_id
+      ? null
+      : await findFixture(match, tournament, required.apiFootballKey);
+    const providerFixtureId = match.live_source_match_id || providerFixture?.fixture?.id;
+    if (!providerFixtureId) continue;
+    const teamASourceId = match.team_a_source_id || String(providerFixture?.teams?.home?.id || '');
+    const teamBSourceId = match.team_b_source_id || String(providerFixture?.teams?.away?.id || '');
+    if (providerFixture) fixtureUpdates.push(buildFixtureLinkUpdate(match, providerFixture, now));
+
+    const [predictions, h2h, injuries, odds] = await Promise.all([
+      fetchApiFootball('/predictions', { fixture: providerFixtureId }, required.apiFootballKey),
+      teamASourceId && teamBSourceId
+        ? fetchApiFootball('/fixtures/headtohead', { h2h: `${teamASourceId}-${teamBSourceId}`, last: 5 }, required.apiFootballKey)
+        : Promise.resolve([]),
+      fetchApiFootball('/injuries', { fixture: providerFixtureId }, required.apiFootballKey),
+      fetchApiFootball('/odds', { fixture: providerFixtureId }, required.apiFootballKey),
+    ]);
+
+    aids.push(...normalizePredictionAids(match, { predictions, h2h, injuries }, tournament, now));
+    oddsRows.push(...normalizeOdds(match, odds, tournament, now));
+  }
+
+  for (const update of fixtureUpdates) {
+    const { id, ...payload } = update;
+    const { error } = await supabase.from('matches').update(payload).eq('id', id);
+    if (error) throw error;
+  }
+  await upsertRows(supabase, 'match_prediction_aids', aids, 'match_id,provider,aid_type');
+  await upsertRows(supabase, 'match_odds', oddsRows, 'match_id,provider,bookmaker,market');
+
+  return {
+    tournament: tournament.slug,
+    matches: matches.length,
+    linkedFixtures: fixtureUpdates.length,
+    aids: aids.length,
+    odds: oddsRows.length,
+  };
 }
 
 async function ensureTournamentTeams(supabase, tournament, apiKey) {

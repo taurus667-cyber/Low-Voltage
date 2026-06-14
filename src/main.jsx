@@ -1630,6 +1630,7 @@ function AdminPage(props) {
           onClick={() => {
             if (ADMIN_PASSWORD && password === ADMIN_PASSWORD) {
               sessionStorage.setItem('admin-ok', 'yes');
+              sessionStorage.setItem('admin-password', password);
               setUnlocked(true);
             } else {
               props.setError('Wrong admin password, or VITE_ADMIN_PASSWORD is not configured.');
@@ -1665,6 +1666,7 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
   const [csvText, setCsvText] = useState('');
   const [jsonUrl, setJsonUrl] = useState('');
   const [jsonText, setJsonText] = useState('');
+  const [syncing, setSyncing] = useState('');
 
   const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
@@ -1789,6 +1791,38 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
     }
   };
 
+  const runManualSync = async (sync) => {
+    setMessage('');
+    setError('');
+    setSyncing(sync);
+    try {
+      const response = await fetch('/api/admin-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': sessionStorage.getItem('admin-password') || ADMIN_PASSWORD,
+        },
+        body: JSON.stringify({ sync }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Manual sync failed.');
+
+      const parts = [];
+      if (payload.prematch) {
+        parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
+      }
+      if (payload.live) {
+        parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}`);
+      }
+      setMessage(`Manual sync complete: ${parts.join('; ') || payload.sync}.`);
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Manual sync failed.');
+    } finally {
+      setSyncing('');
+    }
+  };
+
   return (
     <section>
       <PageTitle title="Admin" action={<button onClick={refresh}>Refresh</button>} />
@@ -1828,6 +1862,17 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
 
         <div className="panel">
           <h2>Import / Refresh Fixtures</h2>
+          <div className="button-row">
+            <button onClick={() => runManualSync('prematch')} disabled={Boolean(syncing)}>
+              {syncing === 'prematch' ? 'Syncing insights...' : 'Sync insights'}
+            </button>
+            <button onClick={() => runManualSync('live')} disabled={Boolean(syncing)}>
+              {syncing === 'live' ? 'Syncing live...' : 'Sync live/recaps'}
+            </button>
+            <button className="primary" onClick={() => runManualSync('all')} disabled={Boolean(syncing)}>
+              {syncing === 'all' ? 'Syncing...' : 'Sync both'}
+            </button>
+          </div>
           <label>
             Public JSON URL
             <input value={jsonUrl} onChange={(event) => setJsonUrl(event.target.value)} placeholder="https://example.com/fixtures.json" />

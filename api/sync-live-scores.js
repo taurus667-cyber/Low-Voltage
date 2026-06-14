@@ -17,58 +17,62 @@ export { isAuthorized };
 export default async function handler(request, response) {
   if (!isAuthorized(request)) return response.status(401).json({ error: 'Unauthorized' });
 
-  const required = getRequiredServerEnv();
-  if (required.error) return response.status(500).json({ error: required.error });
-
   try {
-    const supabase = createClient(required.supabaseUrl, required.serviceRoleKey, {
-      auth: { persistSession: false },
-    });
-    const tournament = await getActiveTournament(supabase);
-    const now = new Date();
-    const matches = await fetchActiveMatches(supabase, tournament, now);
-    if (!matches.length) return response.status(200).json({ synced: 0, message: 'No active published matches.' });
-
-    const providerFixtures = await fetchProviderFixtures(required.apiFootballKey, tournament, matches);
-    const updates = buildMatchUpdates(matches, providerFixtures, now, tournament);
-    for (const update of updates) {
-      const { id, ...payload } = update;
-      const { error } = await supabase.from('matches').update(payload).eq('id', id);
-      if (error) throw error;
-    }
-
-    const eventRows = [];
-    const statisticRows = [];
-    const lineupRows = [];
-    for (const match of matches.filter((match) => shouldFetchMatchDetails(match, now))) {
-      const providerFixtureId = match.live_source_match_id || findProviderFixture(match, providerFixtures)?.fixture?.id;
-      if (!providerFixtureId) continue;
-      const [events, statistics, lineups] = await Promise.all([
-        fetchApiFootball('/fixtures/events', { fixture: providerFixtureId }, required.apiFootballKey),
-        fetchApiFootball('/fixtures/statistics', { fixture: providerFixtureId }, required.apiFootballKey),
-        fetchApiFootball('/fixtures/lineups', { fixture: providerFixtureId }, required.apiFootballKey),
-      ]);
-      eventRows.push(...normalizeProviderEvents(match, events, providerFixtureId, tournament));
-      statisticRows.push(...normalizeProviderStatistics(match, statistics, tournament, now));
-      lineupRows.push(...normalizeProviderLineups(match, lineups, tournament, now));
-    }
-
-    await upsertRows(supabase, 'match_events', eventRows, 'match_id,provider,event_key');
-    await upsertRows(supabase, 'match_statistics', statisticRows, 'match_id,provider,team_name');
-    await upsertRows(supabase, 'match_lineups', lineupRows, 'match_id,provider,team_name');
-
-    return response.status(200).json({
-      tournament: tournament.slug,
-      activeMatches: matches.length,
-      providerFixtures: providerFixtures.length,
-      synced: updates.length,
-      events: eventRows.length,
-      statistics: statisticRows.length,
-      lineups: lineupRows.length,
-    });
+    return response.status(200).json(await runLiveScoreSync());
   } catch (error) {
     return response.status(500).json({ error: error.message || 'Live score sync failed.' });
   }
+}
+
+export async function runLiveScoreSync() {
+  const required = getRequiredServerEnv();
+  if (required.error) throw new Error(required.error);
+
+  const supabase = createClient(required.supabaseUrl, required.serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const tournament = await getActiveTournament(supabase);
+  const now = new Date();
+  const matches = await fetchActiveMatches(supabase, tournament, now);
+  if (!matches.length) return { synced: 0, message: 'No active published matches.' };
+
+  const providerFixtures = await fetchProviderFixtures(required.apiFootballKey, tournament, matches);
+  const updates = buildMatchUpdates(matches, providerFixtures, now, tournament);
+  for (const update of updates) {
+    const { id, ...payload } = update;
+    const { error } = await supabase.from('matches').update(payload).eq('id', id);
+    if (error) throw error;
+  }
+
+  const eventRows = [];
+  const statisticRows = [];
+  const lineupRows = [];
+  for (const match of matches.filter((match) => shouldFetchMatchDetails(match, now))) {
+    const providerFixtureId = match.live_source_match_id || findProviderFixture(match, providerFixtures)?.fixture?.id;
+    if (!providerFixtureId) continue;
+    const [events, statistics, lineups] = await Promise.all([
+      fetchApiFootball('/fixtures/events', { fixture: providerFixtureId }, required.apiFootballKey),
+      fetchApiFootball('/fixtures/statistics', { fixture: providerFixtureId }, required.apiFootballKey),
+      fetchApiFootball('/fixtures/lineups', { fixture: providerFixtureId }, required.apiFootballKey),
+    ]);
+    eventRows.push(...normalizeProviderEvents(match, events, providerFixtureId, tournament));
+    statisticRows.push(...normalizeProviderStatistics(match, statistics, tournament, now));
+    lineupRows.push(...normalizeProviderLineups(match, lineups, tournament, now));
+  }
+
+  await upsertRows(supabase, 'match_events', eventRows, 'match_id,provider,event_key');
+  await upsertRows(supabase, 'match_statistics', statisticRows, 'match_id,provider,team_name');
+  await upsertRows(supabase, 'match_lineups', lineupRows, 'match_id,provider,team_name');
+
+  return {
+    tournament: tournament.slug,
+    activeMatches: matches.length,
+    providerFixtures: providerFixtures.length,
+    synced: updates.length,
+    events: eventRows.length,
+    statistics: statisticRows.length,
+    lineups: lineupRows.length,
+  };
 }
 
 async function fetchActiveMatches(supabase, tournament, now) {

@@ -13,9 +13,23 @@ export function getRequiredServerEnv() {
 export function isAuthorized(request) {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;
-  const header = request.headers.authorization || '';
+  const header = getHeader(request, 'authorization');
   const querySecret = request.query?.secret || '';
   return header === `Bearer ${expected}` || querySecret === expected;
+}
+
+export function isAdminAuthorized(request) {
+  const expected = process.env.ADMIN_PASSWORD || process.env.VITE_ADMIN_PASSWORD;
+  if (!expected) return false;
+  const header = getHeader(request, 'x-admin-password');
+  const querySecret = request.query?.admin_secret || '';
+  return header === expected || querySecret === expected;
+}
+
+function getHeader(request, name) {
+  const headers = request.headers || {};
+  if (typeof headers.get === 'function') return headers.get(name) || '';
+  return headers[name] || headers[name.toLowerCase()] || '';
 }
 
 export async function fetchApiFootball(path, params, apiKey) {
