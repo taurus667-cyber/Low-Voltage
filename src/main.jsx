@@ -1814,7 +1814,8 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
       if (payload.live) {
         parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}`);
       }
-      setMessage(`Manual sync complete: ${parts.join('; ') || payload.sync}.`);
+      const warningCount = (payload.prematch?.warnings?.length || 0) + (payload.live?.warnings?.length || 0);
+      setMessage(`Manual sync complete: ${parts.join('; ') || payload.sync}${warningCount ? `; ${warningCount} provider warning${warningCount === 1 ? '' : 's'}` : ''}.`);
       await refresh();
     } catch (err) {
       setError(err.message || 'Manual sync failed.');

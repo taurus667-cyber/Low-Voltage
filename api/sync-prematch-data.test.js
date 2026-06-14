@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   buildFixtureLinkUpdate,
   findProviderFixture,
+  isMissingTeamsProfileColumnError,
   normalizeOdds,
   normalizePredictionAids,
   normalizeProviderTeams,
+  stripTeamProfileColumns,
 } from './sync-prematch-data.js';
 
 test('normalizes pre-match prediction aid data', () => {
@@ -71,6 +73,34 @@ test('normalizes provider teams with profile and visual metadata', () => {
   assert.equal(rows[0].country_code, 'us');
   assert.equal(rows[0].flag_url, 'https://flagcdn.com/w80/us.png');
   assert.equal(rows[0].profile_payload.venue.name, 'Home Stadium');
+});
+
+test('can fall back to legacy team columns when target database schema is older', () => {
+  const rows = normalizeProviderTeams(
+    [{
+      team: {
+        id: 2384,
+        name: 'USA',
+        country: 'USA',
+        logo: 'https://example.com/usa.png',
+      },
+    }],
+    { id: 'tournament-1' },
+    new Date('2026-06-13T00:00:00Z'),
+  );
+
+  assert.deepEqual(stripTeamProfileColumns(rows)[0], {
+    tournament_id: 'tournament-1',
+    provider: 'API-Football',
+    provider_team_id: '2384',
+    name: 'USA',
+    logo_url: 'https://example.com/usa.png',
+    country: 'USA',
+    last_synced_at: '2026-06-13T00:00:00.000Z',
+  });
+  assert.equal(isMissingTeamsProfileColumnError({
+    message: "Could not find the 'country_code' column of 'teams' in the schema cache",
+  }), true);
 });
 
 test('pre-match fixture matching tolerates provider accents and aliases', () => {

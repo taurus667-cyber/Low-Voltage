@@ -28,7 +28,8 @@ export async function runPrematchSync() {
     auth: { persistSession: false },
   });
   const tournament = await getActiveTournament(supabase);
-  await ensureTournamentTeams(supabase, tournament, required.apiFootballKey);
+  const warnings = [];
+  await ensureTournamentTeams(supabase, tournament, required.apiFootballKey, warnings);
   const matches = await fetchUpcomingMatches(supabase, tournament);
   const now = new Date();
 
@@ -38,7 +39,7 @@ export async function runPrematchSync() {
   for (const match of matches) {
     const providerFixture = match.live_source_match_id
       ? null
-      : await findFixture(match, tournament, required.apiFootballKey);
+      : await findFixtureSafely(match, tournament, required.apiFootballKey, warnings);
     const providerFixtureId = match.live_source_match_id || providerFixture?.fixture?.id;
     if (!providerFixtureId) continue;
     const teamASourceId = match.team_a_source_id || String(providerFixture?.teams?.home?.id || '');
@@ -46,12 +47,12 @@ export async function runPrematchSync() {
     if (providerFixture) fixtureUpdates.push(buildFixtureLinkUpdate(match, providerFixture, now));
 
     const [predictions, h2h, injuries, odds] = await Promise.all([
-      fetchApiFootball('/predictions', { fixture: providerFixtureId }, required.apiFootballKey),
+      fetchOptionalProviderData('/predictions', { fixture: providerFixtureId }, required.apiFootballKey, warnings, match),
       teamASourceId && teamBSourceId
-        ? fetchApiFootball('/fixtures/headtohead', { h2h: `${teamASourceId}-${teamBSourceId}`, last: 5 }, required.apiFootballKey)
+        ? fetchOptionalProviderData('/fixtures/headtohead', { h2h: `${teamASourceId}-${teamBSourceId}`, last: 5 }, required.apiFootballKey, warnings, match)
         : Promise.resolve([]),
-      fetchApiFootball('/injuries', { fixture: providerFixtureId }, required.apiFootballKey),
-      fetchApiFootball('/odds', { fixture: providerFixtureId }, required.apiFootballKey),
+      fetchOptionalProviderData('/injuries', { fixture: providerFixtureId }, required.apiFootballKey, warnings, match),
+      fetchOptionalProviderData('/odds', { fixture: providerFixtureId }, required.apiFootballKey, warnings, match),
     ]);
 
     aids.push(...normalizePredictionAids(match, { predictions, h2h, injuries }, tournament, now));
@@ -72,16 +73,25 @@ export async function runPrematchSync() {
     linkedFixtures: fixtureUpdates.length,
     aids: aids.length,
     odds: oddsRows.length,
+    warnings,
   };
 }
 
-async function ensureTournamentTeams(supabase, tournament, apiKey) {
-  const teams = await fetchApiFootball('/teams', {
+async function ensureTournamentTeams(supabase, tournament, apiKey, warnings) {
+  const teams = await fetchOptionalProviderData('/teams', {
     league: tournament.api_football_league_id,
     season: tournament.api_football_season,
-  }, apiKey);
+  }, apiKey, warnings);
+  if (!teams.length) return;
+
   const rows = normalizeProviderTeams(teams, tournament);
-  await upsertRows(supabase, 'teams', rows, 'tournament_id,provider,provider_team_id');
+  try {
+    await upsertRows(supabase, 'teams', rows, 'tournament_id,provider,provider_team_id');
+  } catch (error) {
+    if (!isMissingTeamsProfileColumnError(error)) throw error;
+    warnings.push('Teams table is missing profile columns; synced provider teams with legacy columns only.');
+    await upsertRows(supabase, 'teams', stripTeamProfileColumns(rows), 'tournament_id,provider,provider_team_id');
+  }
 }
 
 export function normalizeProviderTeams(teams, tournament = {}, now = new Date()) {
@@ -137,6 +147,15 @@ export async function findFixture(match, tournament, apiKey) {
   return findProviderFixture(match, fixtures);
 }
 
+async function findFixtureSafely(match, tournament, apiKey, warnings) {
+  try {
+    return await findFixture(match, tournament, apiKey);
+  } catch (error) {
+    warnings.push(`${match.team_a} vs ${match.team_b}: fixture lookup skipped (${formatProviderError(error)}).`);
+    return null;
+  }
+}
+
 export function findProviderFixture(match, fixtures = []) {
   return fixtures.find((row) => {
     const providerKickoff = new Date(row.fixture?.date || '').getTime();
@@ -148,6 +167,41 @@ export function findProviderFixture(match, fixtures = []) {
       normalizeTeamName(row.teams?.home?.name) === normalizeTeamName(match.team_a) &&
       normalizeTeamName(row.teams?.away?.name) === normalizeTeamName(match.team_b);
   });
+}
+
+async function fetchOptionalProviderData(path, params, apiKey, warnings, match = null) {
+  try {
+    return await fetchApiFootball(path, params, apiKey);
+  } catch (error) {
+    const label = match ? `${match.team_a} vs ${match.team_b}` : 'Provider';
+    warnings.push(`${label}: ${path} skipped (${formatProviderError(error)}).`);
+    return [];
+  }
+}
+
+function formatProviderError(error) {
+  const message = error?.message || 'provider request failed';
+  const status = message.match(/\bfailed with (\d+)/i)?.[1];
+  if (status === '429') return 'API-Football rate limit';
+  return message;
+}
+
+export function isMissingTeamsProfileColumnError(error) {
+  const message = error?.message || '';
+  return /Could not find the '.*' column of 'teams' in the schema cache/i.test(message) ||
+    /PGRST204/i.test(error?.code || '');
+}
+
+export function stripTeamProfileColumns(rows) {
+  return rows.map((row) => ({
+    tournament_id: row.tournament_id,
+    provider: row.provider,
+    provider_team_id: row.provider_team_id,
+    name: row.name,
+    logo_url: row.logo_url,
+    country: row.country,
+    last_synced_at: row.last_synced_at,
+  }));
 }
 
 export function buildFixtureLinkUpdate(match, fixture, now = new Date()) {
