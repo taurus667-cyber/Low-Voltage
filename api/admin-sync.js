@@ -1,4 +1,4 @@
-import { isAdminAuthorized } from './api-football.js';
+import { isAdminAuthorized, toPublicErrorMessage } from './api-football.js';
 import { runLiveScoreSync } from './sync-live-scores.js';
 import { runPrematchSync } from './sync-prematch-data.js';
 
@@ -18,7 +18,7 @@ export default async function handler(request, response) {
 
     return response.status(200).json({ sync, ...result });
   } catch (error) {
-    return response.status(500).json({ error: error.message || 'Manual sync failed.' });
+    return response.status(500).json({ error: toPublicErrorMessage(error) });
   }
 }
 

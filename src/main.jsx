@@ -1818,7 +1818,7 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
       setMessage(`Manual sync complete: ${parts.join('; ') || payload.sync}${warningCount ? `; ${warningCount} provider warning${warningCount === 1 ? '' : 's'}` : ''}.`);
       await refresh();
     } catch (err) {
-      setError(err.message || 'Manual sync failed.');
+      setError(formatManualSyncError(err.message || 'Manual sync failed.'));
     } finally {
       setSyncing('');
     }
@@ -2056,6 +2056,17 @@ function toLocalInputValue(value) {
 
 function throwIfError(error) {
   if (error) throw error;
+}
+
+function formatManualSyncError(message) {
+  const value = String(message || '');
+  if (/API-Football .* failed with 429/i.test(value)) {
+    return 'The football data provider is temporarily rate-limited. Please wait a few minutes and try the sync again.';
+  }
+  if (/API-Football .* failed with 5\d\d/i.test(value)) {
+    return 'The football data provider is temporarily unavailable. Please try the sync again shortly.';
+  }
+  return value || 'Manual sync failed.';
 }
 
 function formatPublicSource(source) {

@@ -26,6 +26,17 @@ export function isAdminAuthorized(request) {
   return header === expected || querySecret === expected;
 }
 
+export function toPublicErrorMessage(error) {
+  const message = error?.message || String(error || '');
+  if (/API-Football .* failed with 429/i.test(message)) {
+    return 'The football data provider is temporarily rate-limited. Please wait a few minutes and try the sync again.';
+  }
+  if (/API-Football .* failed with 5\d\d/i.test(message)) {
+    return 'The football data provider is temporarily unavailable. Please try the sync again shortly.';
+  }
+  return message || 'Manual sync failed.';
+}
+
 function getHeader(request, name) {
   const headers = request.headers || {};
   if (typeof headers.get === 'function') return headers.get(name) || '';
