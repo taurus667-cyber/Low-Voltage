@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeOdds, normalizePredictionAids, normalizeProviderTeams } from './sync-prematch-data.js';
+import { findProviderFixture, normalizeOdds, normalizePredictionAids, normalizeProviderTeams } from './sync-prematch-data.js';
 
 test('normalizes pre-match prediction aid data', () => {
   const rows = normalizePredictionAids(
@@ -65,4 +65,37 @@ test('normalizes provider teams with profile and visual metadata', () => {
   assert.equal(rows[0].country_code, 'us');
   assert.equal(rows[0].flag_url, 'https://flagcdn.com/w80/us.png');
   assert.equal(rows[0].profile_payload.venue.name, 'Home Stadium');
+});
+
+test('pre-match fixture matching tolerates provider accents and aliases', () => {
+  const cases = [
+    ['Germany', 'Curacao', 'Germany', 'Curaçao'],
+    ['Spain', 'Cape Verde', 'Spain', 'Cabo Verde'],
+    ['Portugal', 'DR Congo', 'Portugal', 'Congo DR'],
+    ['Belgium', 'Iran', 'Belgium', 'IR Iran'],
+    ['Canada', 'Bosnia & Herzegovina', 'Canada', 'Bosnia and Herzegovina'],
+    ['Ivory Coast', 'Ecuador', "Côte d'Ivoire", 'Ecuador'],
+    ['United States', 'Australia', 'USA', 'Australia'],
+    ['South Korea', 'Czechia', 'Korea Republic', 'Czech Republic'],
+    ['Turkiye', 'Paraguay', 'Turkey', 'Paraguay'],
+  ];
+
+  cases.forEach(([teamA, teamB, providerHome, providerAway], index) => {
+    const fixture = findProviderFixture(
+      {
+        team_a: teamA,
+        team_b: teamB,
+        kickoff_time: '2026-06-14T17:00:00Z',
+      },
+      [{
+        fixture: { id: 12345 + index, date: '2026-06-14T17:00:00Z' },
+        teams: {
+          home: { name: providerHome },
+          away: { name: providerAway },
+        },
+      }],
+    );
+
+    assert.equal(fixture.fixture.id, 12345 + index, `${teamA} v ${teamB}`);
+  });
 });

@@ -65,12 +65,12 @@ set kickoff_time = values_table.kickoff_time::timestamp with time zone,
     updated_at = now()
 from (
   values
-    ('wc2026-group-04-202606190100-codex', '2026-06-19T03:00:00Z'),
-    ('wc2026-group-16-202606200030-codex', '2026-06-20T01:00:00Z'),
-    ('wc2026-group-22-202606200300-codex', '2026-06-20T04:00:00Z'),
-    ('wc2026-group-37-202606151900-codex', '2026-06-15T22:00:00Z'),
-    ('wc2026-group-38-202606160100-codex', '2026-06-16T04:00:00Z'),
-    ('wc2026-group-43-202606151600-codex', '2026-06-15T17:00:00Z')
+    ('wc2026-group-04-202606190100-codex', '2026-06-19T01:00:00Z'),
+    ('wc2026-group-16-202606200030-codex', '2026-06-20T00:30:00Z'),
+    ('wc2026-group-22-202606200300-codex', '2026-06-20T03:00:00Z'),
+    ('wc2026-group-37-202606151900-codex', '2026-06-15T19:00:00Z'),
+    ('wc2026-group-38-202606160100-codex', '2026-06-16T01:00:00Z'),
+    ('wc2026-group-43-202606151600-codex', '2026-06-15T16:00:00Z')
 ) as values_table(external_match_id, kickoff_time)
 where public.matches.external_match_id = values_table.external_match_id;
 

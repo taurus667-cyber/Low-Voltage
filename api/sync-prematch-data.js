@@ -4,6 +4,7 @@ import {
   getActiveTournament,
   getRequiredServerEnv,
   isAuthorized,
+  normalizeTeamName,
 } from './api-football.js';
 import { getTeamMetadata, slugifyTeamName } from '../src/lib/teamMetadata.js';
 
@@ -104,17 +105,28 @@ async function fetchUpcomingMatches(supabase, tournament) {
   return data || [];
 }
 
-async function findFixtureId(match, tournament, apiKey) {
+export async function findFixtureId(match, tournament, apiKey) {
   const date = match.kickoff_time.slice(0, 10);
   const fixtures = await fetchApiFootball('/fixtures', {
     league: tournament.api_football_league_id,
     season: tournament.api_football_season,
     date,
   }, apiKey);
-  const fixture = fixtures.find((row) =>
-    row.teams?.home?.name === match.team_a && row.teams?.away?.name === match.team_b
-  );
+  const fixture = findProviderFixture(match, fixtures);
   return fixture?.fixture?.id ? String(fixture.fixture.id) : '';
+}
+
+export function findProviderFixture(match, fixtures = []) {
+  return fixtures.find((row) => {
+    const providerKickoff = new Date(row.fixture?.date || '').getTime();
+    const appKickoff = new Date(match.kickoff_time).getTime();
+    const kickoffClose = Number.isNaN(providerKickoff) || Number.isNaN(appKickoff)
+      ? true
+      : Math.abs(providerKickoff - appKickoff) <= 2 * 60 * 60 * 1000;
+    return kickoffClose &&
+      normalizeTeamName(row.teams?.home?.name) === normalizeTeamName(match.team_a) &&
+      normalizeTeamName(row.teams?.away?.name) === normalizeTeamName(match.team_b);
+  });
 }
 
 export function normalizePredictionAids(match, source, tournament = {}, now = new Date()) {

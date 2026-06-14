@@ -37,6 +37,8 @@ export function normalizeFixtureRows(rows) {
       team_b: teamB,
       kickoff_time: kickoffDate.toISOString(),
       venue: row.venue || null,
+      team_a_score: parseOptionalScore(row.team_a_score),
+      team_b_score: parseOptionalScore(row.team_b_score),
       status: row.status || 'scheduled',
       is_locked: Boolean(row.is_locked ?? false),
       is_published: row.is_published === undefined ? false : Boolean(row.is_published),
@@ -76,4 +78,13 @@ function parseCsv(text) {
   row.push(cell);
   rows.push(row);
   return rows.filter((items) => items.some((item) => item.trim()));
+}
+
+function parseOptionalScore(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const score = Number(value);
+  if (!Number.isInteger(score) || score < 0) {
+    throw new Error(`Fixture score must be a non-negative integer.`);
+  }
+  return score;
 }
