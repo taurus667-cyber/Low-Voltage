@@ -92,6 +92,7 @@ const TEAM_NAME_ALIASES = {
   'cura ao': 'curacao',
   'cape verde': 'cape verde',
   'cabo verde': 'cape verde',
+  'cape verde islands': 'cape verde',
   'dr congo': 'dr congo',
   'congo dr': 'dr congo',
   'democratic republic of the congo': 'dr congo',

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { findProviderFixture, normalizeOdds, normalizePredictionAids, normalizeProviderTeams } from './sync-prematch-data.js';
+import {
+  buildFixtureLinkUpdate,
+  findProviderFixture,
+  normalizeOdds,
+  normalizePredictionAids,
+  normalizeProviderTeams,
+} from './sync-prematch-data.js';
 
 test('normalizes pre-match prediction aid data', () => {
   const rows = normalizePredictionAids(
@@ -70,7 +76,7 @@ test('normalizes provider teams with profile and visual metadata', () => {
 test('pre-match fixture matching tolerates provider accents and aliases', () => {
   const cases = [
     ['Germany', 'Curacao', 'Germany', 'Curaçao'],
-    ['Spain', 'Cape Verde', 'Spain', 'Cabo Verde'],
+    ['Spain', 'Cape Verde', 'Spain', 'Cape Verde Islands'],
     ['Portugal', 'DR Congo', 'Portugal', 'Congo DR'],
     ['Belgium', 'Iran', 'Belgium', 'IR Iran'],
     ['Canada', 'Bosnia & Herzegovina', 'Canada', 'Bosnia and Herzegovina'],
@@ -97,5 +103,29 @@ test('pre-match fixture matching tolerates provider accents and aliases', () => 
     );
 
     assert.equal(fixture.fixture.id, 12345 + index, `${teamA} v ${teamB}`);
+  });
+});
+
+test('builds provider fixture link updates for future syncs', () => {
+  const update = buildFixtureLinkUpdate(
+    { id: 'match-1' },
+    {
+      fixture: { id: 1489380 },
+      teams: {
+        home: { id: 9, name: 'Spain' },
+        away: { id: 1533, name: 'Cape Verde Islands' },
+      },
+    },
+    new Date('2026-06-14T12:00:00Z'),
+  );
+
+  assert.deepEqual(update, {
+    id: 'match-1',
+    live_source: 'API-Football',
+    live_source_match_id: '1489380',
+    team_a_source_id: '9',
+    team_b_source_id: '1533',
+    last_synced_at: '2026-06-14T12:00:00.000Z',
+    updated_at: '2026-06-14T12:00:00.000Z',
   });
 });

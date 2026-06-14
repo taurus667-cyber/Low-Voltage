@@ -27,14 +27,21 @@ export default async function handler(request, response) {
 
     const aids = [];
     const oddsRows = [];
+    const fixtureUpdates = [];
     for (const match of matches) {
-      const providerFixtureId = match.live_source_match_id || await findFixtureId(match, tournament, required.apiFootballKey);
+      const providerFixture = match.live_source_match_id
+        ? null
+        : await findFixture(match, tournament, required.apiFootballKey);
+      const providerFixtureId = match.live_source_match_id || providerFixture?.fixture?.id;
       if (!providerFixtureId) continue;
+      const teamASourceId = match.team_a_source_id || String(providerFixture?.teams?.home?.id || '');
+      const teamBSourceId = match.team_b_source_id || String(providerFixture?.teams?.away?.id || '');
+      if (providerFixture) fixtureUpdates.push(buildFixtureLinkUpdate(match, providerFixture, now));
 
       const [predictions, h2h, injuries, odds] = await Promise.all([
         fetchApiFootball('/predictions', { fixture: providerFixtureId }, required.apiFootballKey),
-        match.team_a_source_id && match.team_b_source_id
-          ? fetchApiFootball('/fixtures/headtohead', { h2h: `${match.team_a_source_id}-${match.team_b_source_id}`, last: 5 }, required.apiFootballKey)
+        teamASourceId && teamBSourceId
+          ? fetchApiFootball('/fixtures/headtohead', { h2h: `${teamASourceId}-${teamBSourceId}`, last: 5 }, required.apiFootballKey)
           : Promise.resolve([]),
         fetchApiFootball('/injuries', { fixture: providerFixtureId }, required.apiFootballKey),
         fetchApiFootball('/odds', { fixture: providerFixtureId }, required.apiFootballKey),
@@ -44,12 +51,18 @@ export default async function handler(request, response) {
       oddsRows.push(...normalizeOdds(match, odds, tournament, now));
     }
 
+    for (const update of fixtureUpdates) {
+      const { id, ...payload } = update;
+      const { error } = await supabase.from('matches').update(payload).eq('id', id);
+      if (error) throw error;
+    }
     await upsertRows(supabase, 'match_prediction_aids', aids, 'match_id,provider,aid_type');
     await upsertRows(supabase, 'match_odds', oddsRows, 'match_id,provider,bookmaker,market');
 
     return response.status(200).json({
       tournament: tournament.slug,
       matches: matches.length,
+      linkedFixtures: fixtureUpdates.length,
       aids: aids.length,
       odds: oddsRows.length,
     });
@@ -106,14 +119,18 @@ async function fetchUpcomingMatches(supabase, tournament) {
 }
 
 export async function findFixtureId(match, tournament, apiKey) {
+  const fixture = await findFixture(match, tournament, apiKey);
+  return fixture?.fixture?.id ? String(fixture.fixture.id) : '';
+}
+
+export async function findFixture(match, tournament, apiKey) {
   const date = match.kickoff_time.slice(0, 10);
   const fixtures = await fetchApiFootball('/fixtures', {
     league: tournament.api_football_league_id,
     season: tournament.api_football_season,
     date,
   }, apiKey);
-  const fixture = findProviderFixture(match, fixtures);
-  return fixture?.fixture?.id ? String(fixture.fixture.id) : '';
+  return findProviderFixture(match, fixtures);
 }
 
 export function findProviderFixture(match, fixtures = []) {
@@ -127,6 +144,18 @@ export function findProviderFixture(match, fixtures = []) {
       normalizeTeamName(row.teams?.home?.name) === normalizeTeamName(match.team_a) &&
       normalizeTeamName(row.teams?.away?.name) === normalizeTeamName(match.team_b);
   });
+}
+
+export function buildFixtureLinkUpdate(match, fixture, now = new Date()) {
+  return {
+    id: match.id,
+    live_source: 'API-Football',
+    live_source_match_id: String(fixture.fixture?.id || ''),
+    team_a_source_id: String(fixture.teams?.home?.id || ''),
+    team_b_source_id: String(fixture.teams?.away?.id || ''),
+    last_synced_at: now.toISOString(),
+    updated_at: now.toISOString(),
+  };
 }
 
 export function normalizePredictionAids(match, source, tournament = {}, now = new Date()) {

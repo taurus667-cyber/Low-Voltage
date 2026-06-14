@@ -10,7 +10,7 @@ const TEAM_METADATA = [
   ['Bosnia & Herzegovina', 'ba', ['Bosnia and Herzegovina']],
   ['Brazil', 'br'],
   ['Canada', 'ca'],
-  ['Cape Verde', 'cv'],
+  ['Cape Verde', 'cv', ['Cabo Verde', 'Cape Verde Islands']],
   ['Colombia', 'co'],
   ['Costa Rica', 'cr'],
   ['Croatia', 'hr'],
