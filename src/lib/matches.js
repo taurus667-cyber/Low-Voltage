@@ -3,7 +3,11 @@ import { isFinalScoreComplete } from './scoring.js';
 export const LIVE_MATCH_WINDOW_MINUTES = 150;
 
 export function isMatchLocked(match, now = Date.now()) {
-  return Boolean(match.is_locked) || new Date(match.kickoff_time).getTime() <= now;
+  return Boolean(match.is_locked) || isKickoffClosed(match, now);
+}
+
+export function isKickoffClosed(match, now = Date.now()) {
+  return new Date(match.kickoff_time).getTime() <= now;
 }
 
 export function isMatchLive(match, now = Date.now()) {
@@ -33,10 +37,10 @@ export function isMatchFinished(match) {
 }
 
 export function getMatchLockReason(match, now = Date.now()) {
-  if (match.is_locked) return 'Predictions are closed because the admin lock is on.';
-  if (new Date(match.kickoff_time).getTime() <= now) {
+  if (isKickoffClosed(match, now)) {
     return 'Predictions are closed because kickoff time has passed. Edit the kickoff time to reopen it.';
   }
+  if (match.is_locked) return 'Predictions are closed because the admin lock is on.';
   return '';
 }
 

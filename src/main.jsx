@@ -7,6 +7,7 @@ import { getActiveTournament, getTournamentBySlug, scopedRows } from './lib/tour
 import {
   getLiveStatusLabel,
   getMatchLockReason,
+  isKickoffClosed,
   isMatchLive,
   isMatchLocked,
   isMatchPlayed,
@@ -1963,7 +1964,7 @@ function AdminTools({
             <div className="admin-actions">
               <button onClick={() => edit(match)}>Edit</button>
               <button onClick={() => quickUpdate(match.id, { is_published: !match.is_published })}>{match.is_published ? 'Unpublish' : 'Publish'}</button>
-              <button onClick={() => quickUpdate(match.id, { is_locked: !match.is_locked })}>{match.is_locked ? 'Unlock' : 'Lock'}</button>
+              <AdminLockButton match={match} quickUpdate={quickUpdate} />
               <button className="danger" onClick={() => remove(match)}>Delete</button>
             </div>
           </article>
@@ -1971,6 +1972,20 @@ function AdminTools({
       </div>
     </section>
   );
+}
+
+function AdminLockButton({ match, quickUpdate }) {
+  if (isKickoffClosed(match)) {
+    return (
+      <button disabled title="Predictions are already closed because kickoff time has passed. Edit kickoff time to reopen.">
+        Closed after kickoff
+      </button>
+    );
+  }
+  if (match.is_locked) {
+    return <button onClick={() => quickUpdate(match.id, { is_locked: false })}>Unlock manual lock</button>;
+  }
+  return <button onClick={() => quickUpdate(match.id, { is_locked: true })}>Lock manually</button>;
 }
 
 function CloneGroupsPanel({
