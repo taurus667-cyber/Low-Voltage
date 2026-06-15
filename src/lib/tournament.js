@@ -13,6 +13,11 @@ export function getActiveTournament(tournaments = []) {
   return tournaments.find((tournament) => tournament.is_active) || tournaments[0] || FALLBACK_TOURNAMENT;
 }
 
+export function getTournamentBySlug(tournaments = [], slug = '') {
+  if (!slug) return null;
+  return tournaments.find((tournament) => tournament.slug === slug) || null;
+}
+
 export function scopedRows(rows = [], tournament) {
   if (!tournament?.id) return rows;
   return rows.filter((row) => !row.tournament_id || row.tournament_id === tournament.id);

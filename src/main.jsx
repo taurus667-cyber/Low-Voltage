@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
 import { calculateLeaderboard, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
-import { getActiveTournament, scopedRows } from './lib/tournament.js';
+import { getActiveTournament, getTournamentBySlug, scopedRows } from './lib/tournament.js';
 import {
   getLiveStatusLabel,
   getMatchLockReason,
@@ -28,6 +28,9 @@ const STATUSES = ['scheduled', 'live', 'finished'];
 
 function App() {
   const [route, setRoute] = useRoute();
+  const pageRoute = getPageRoute(route);
+  const groupSlug = getRouteGroupSlug(route);
+  const routeBase = groupSlug ? `/g/${groupSlug}` : '';
   const [player, setPlayer] = useStoredPlayer();
   const [players, setPlayers] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -63,7 +66,8 @@ function App() {
       throwIfError(matchRows.error);
       throwIfError(predictionRows.error);
       const loadedMatches = matchRows.data || [];
-      const needsMatchDetails = route === '/matches' || route.startsWith('/nations/');
+      const currentPageRoute = getPageRoute(route);
+      const needsMatchDetails = currentPageRoute === '/matches' || currentPageRoute.startsWith('/nations/');
       const hasLiveMatches = loadedMatches.some((match) => isMatchLive(match));
       const [eventRows, statisticRows, lineupRows] = hasLiveMatches
         || needsMatchDetails
@@ -101,23 +105,24 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const activeTournament = getActiveTournament(tournaments);
+  const activeTournament = getTournamentBySlug(tournaments, groupSlug) || getActiveTournament(tournaments);
   const scopedPlayers = scopedRows(players, activeTournament);
   const scopedMatches = scopedRows(matches, activeTournament);
   const scopedPredictions = scopedRows(predictions, activeTournament);
   const scopedTeams = scopedRows(teams, activeTournament);
   const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
+  const currentScopedPlayer = scopedPlayers.find((item) => item.id === player?.id) || null;
 
   const toggleTeamFavorite = async (team) => {
     setMessage('');
     setError('');
-    if (!player || !isPlayerActive(player)) {
+    if (!currentScopedPlayer || !isPlayerActive(currentScopedPlayer)) {
       setError('Choose your player profile before adding favorites.');
       return;
     }
     if (!team?.slug) return;
     const existing = scopedTeamFavorites.find((favorite) =>
-      favorite.player_id === player.id && favorite.team_slug === team.slug,
+      favorite.player_id === currentScopedPlayer.id && favorite.team_slug === team.slug,
     );
     try {
       if (existing) {
@@ -127,7 +132,7 @@ function App() {
       } else {
         const { error } = await supabase.from('player_favorite_teams').insert({
           tournament_id: activeTournament?.id || null,
-          player_id: player.id,
+          player_id: currentScopedPlayer.id,
           team_slug: team.slug,
           team_name: team.name,
           country_code: team.country_code || null,
@@ -143,7 +148,7 @@ function App() {
   };
 
   const pageProps = {
-    player,
+    player: currentScopedPlayer,
     setPlayer,
     players: scopedPlayers,
     matches: scopedMatches,
@@ -152,6 +157,13 @@ function App() {
     teamFavorites: scopedTeamFavorites,
     toggleTeamFavorite,
     tournament: activeTournament,
+    tournaments,
+    sourceTournaments: tournaments.filter((tournament) => !tournament.is_clone),
+    allPlayers: players,
+    allMatches: matches,
+    allPredictions: predictions,
+    allTeamFavorites: teamFavorites,
+    routeBase,
     matchEvents: scopedRows(matchEvents, activeTournament),
     matchStatistics: scopedRows(matchStatistics, activeTournament),
     matchLineups: scopedRows(matchLineups, activeTournament),
@@ -169,26 +181,26 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => navigate('/')}>
+        <button className="brand" onClick={() => navigate(buildRoute(routeBase, '/'))}>
           {activeTournament.name} Picks
         </button>
         <nav aria-label="Primary navigation">
-          <button className={route === '/matches' ? 'active' : ''} onClick={() => navigate('/matches')}>
+          <button className={pageRoute === '/matches' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/matches'))}>
             Matches
           </button>
-          <button className={route === '/predictions' ? 'active' : ''} onClick={() => navigate('/predictions')}>
+          <button className={pageRoute === '/predictions' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/predictions'))}>
             Picks
           </button>
-          <button className={route === '/groups' ? 'active' : ''} onClick={() => navigate('/groups')}>
+          <button className={pageRoute === '/groups' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/groups'))}>
             Groups
           </button>
-          <button className={route === '/favorites' ? 'active' : ''} onClick={() => navigate('/favorites')}>
+          <button className={pageRoute === '/favorites' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/favorites'))}>
             Favorites
           </button>
-          <button className={route === '/leaderboard' ? 'active' : ''} onClick={() => navigate('/leaderboard')}>
+          <button className={pageRoute === '/leaderboard' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/leaderboard'))}>
             Leaderboard
           </button>
-          <button className={route === '/admin' ? 'active' : ''} onClick={() => navigate('/admin')}>
+          <button className={pageRoute === '/admin' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/admin'))}>
             Admin
           </button>
         </nav>
@@ -203,20 +215,20 @@ function App() {
       {error && <div className="banner error">{error}</div>}
 
       <main>
-        {route === '/' && <HomePage {...pageProps} />}
-        {route === '/matches' && <MatchesPage {...pageProps} />}
-        {route === '/predictions' && <PredictionsPage {...pageProps} />}
-        {route === '/groups' && <GroupsPage {...pageProps} />}
-        {route === '/favorites' && <FavoritesPage {...pageProps} />}
-        {route.startsWith('/nations/') && <NationPage {...pageProps} route={route} />}
-        {route === '/leaderboard' && <LeaderboardPage {...pageProps} />}
-        {route === '/admin' && <AdminPage {...pageProps} />}
+        {pageRoute === '/' && <HomePage {...pageProps} />}
+        {pageRoute === '/matches' && <MatchesPage {...pageProps} />}
+        {pageRoute === '/predictions' && <PredictionsPage {...pageProps} />}
+        {pageRoute === '/groups' && <GroupsPage {...pageProps} />}
+        {pageRoute === '/favorites' && <FavoritesPage {...pageProps} />}
+        {pageRoute.startsWith('/nations/') && <NationPage {...pageProps} route={pageRoute} />}
+        {pageRoute === '/leaderboard' && <LeaderboardPage {...pageProps} />}
+        {pageRoute === '/admin' && <AdminPage {...pageProps} />}
       </main>
     </div>
   );
 }
 
-function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate, tournament }) {
+function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate, tournament, routeBase }) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
 
@@ -243,7 +255,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
         if (!existing) throw new Error('That player was not found.');
         setPlayer(existing);
         setMessage(`Welcome back, ${existing.name}.`);
-        navigate('/matches');
+        navigate(buildRoute(routeBase, '/matches'));
         return;
       }
 
@@ -262,7 +274,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       setPlayer(data);
       await refresh();
       setMessage(`Welcome, ${data.name}.`);
-      navigate('/matches');
+      navigate(buildRoute(routeBase, '/matches'));
     } catch (err) {
       if (isUniqueViolation(err)) {
         setError('That display name is already registered. Use the existing profile.');
@@ -298,7 +310,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
           Continue
         </button>
         {player && (
-          <button className="ghost" onClick={() => navigate('/matches')}>
+          <button className="ghost" onClick={() => navigate(buildRoute(routeBase, '/matches'))}>
             Continue as {player.name}
           </button>
         )}
@@ -329,6 +341,7 @@ function MatchesPage({
   setMessage,
   setError,
   navigate,
+  routeBase,
   matchEvents,
   matchStatistics,
   matchLineups,
@@ -413,10 +426,10 @@ function MatchesPage({
   }, [publishedMatches]);
 
   if (!currentPlayer) {
-    return <NeedPlayer navigate={navigate} />;
+    return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
   }
   if (!isPlayerActive(currentPlayer)) {
-    return <InactivePlayer navigate={navigate} />;
+    return <InactivePlayer navigate={navigate} routeBase={routeBase} />;
   }
 
   return (
@@ -450,6 +463,7 @@ function MatchesPage({
                 tournament={tournament}
                 teams={teams}
                 navigate={navigate}
+                routeBase={routeBase}
               />
             ))}
           </div>
@@ -494,6 +508,7 @@ function MatchesPage({
             tournament={tournament}
             teams={teams}
             navigate={navigate}
+            routeBase={routeBase}
           />
         ))}
       </div>
@@ -525,6 +540,7 @@ function PredictionCard({
   tournament,
   teams = [],
   navigate,
+  routeBase,
 }) {
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
@@ -586,9 +602,9 @@ function PredictionCard({
         {live && <span className="live-pill">{getLiveStatusLabel(match)}</span>}
       </div>
       <div className="teams">
-        <TeamBlock team={teamA} align="start" navigate={navigate} />
+        <TeamBlock team={teamA} align="start" navigate={navigate} routeBase={routeBase} />
         <span>vs</span>
-        <TeamBlock team={teamB} align="end" navigate={navigate} />
+        <TeamBlock team={teamB} align="end" navigate={navigate} routeBase={routeBase} />
       </div>
       {match.venue && <p className="muted">{match.venue}</p>}
       {live && (
@@ -684,9 +700,9 @@ function PredictionCard({
   );
 }
 
-function TeamBlock({ team, align = 'start', navigate }) {
+function TeamBlock({ team, align = 'start', navigate, routeBase = '' }) {
   const openNation = () => {
-    if (team?.slug && navigate) navigate(`/nations/${team.slug}`);
+    if (team?.slug && navigate) navigate(buildRoute(routeBase, `/nations/${team.slug}`));
   };
   return (
     <button className={`team-block ${align}`} onClick={openNation} disabled={!team?.slug} title={`Open ${team.name} profile`}>
@@ -1094,7 +1110,7 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
   );
 }
 
-function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player, refresh, navigate }) {
+function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player, refresh, navigate, routeBase }) {
   const groups = calculateGroupStandings(matches);
   return (
     <section>
@@ -1133,7 +1149,7 @@ function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player,
                               onToggle={toggleTeamFavorite}
                               player={player}
                             />
-                            <button className="table-team" onClick={() => navigate(`/nations/${team.slug}`)}>
+                            <button className="table-team" onClick={() => navigate(buildRoute(routeBase, `/nations/${team.slug}`))}>
                               <TeamFlag team={team} />
                               <span>{row.team}</span>
                             </button>
@@ -1161,9 +1177,9 @@ function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player,
   );
 }
 
-function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navigate }) {
+function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navigate, routeBase }) {
   if (!player) {
-    return <NeedPlayer navigate={navigate} />;
+    return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
   }
   const favorites = teamFavorites
     .filter((favorite) => favorite.player_id === player.id)
@@ -1180,7 +1196,7 @@ function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navig
       <div className="favorite-grid">
         {favorites.map(({ favorite, team }) => (
           <article className="favorite-card" key={favorite.id || team.slug}>
-            <button className="favorite-card-main" onClick={() => navigate(`/nations/${team.slug}`)}>
+            <button className="favorite-card-main" onClick={() => navigate(buildRoute(routeBase, `/nations/${team.slug}`))}>
               <TeamFlag team={team} />
               <span>
                 <strong>{team.name}</strong>
@@ -1201,7 +1217,7 @@ function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navig
   );
 }
 
-function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, player, matchStatistics, refresh, navigate }) {
+function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, player, matchStatistics, refresh, navigate, routeBase }) {
   const slug = route.replace('/nations/', '').split('/')[0];
   const providerTeam = teams.find((team) => team.slug === slug);
   const fallbackName = slug.split('-').map((part) => formatSentenceFragment(part)).join(' ');
@@ -1273,7 +1289,7 @@ function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, 
                 <tr key={match.id}>
                   <td>{formatDate(match.kickoff_time)}</td>
                   <td>
-                    <button className="table-team match-link" onClick={() => navigate(`/matches#match-${match.id}`)}>
+                    <button className="table-team match-link" onClick={() => navigate(`${buildRoute(routeBase, '/matches')}#match-${match.id}`)}>
                       <span>{match.team_a} vs {match.team_b}</span>
                     </button>
                   </td>
@@ -1306,12 +1322,12 @@ function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, 
         )}
       </div>
 
-      <button onClick={() => navigate('/matches')}>Back to matches</button>
+      <button onClick={() => navigate(buildRoute(routeBase, '/matches'))}>Back to matches</button>
     </section>
   );
 }
 
-function PredictionsPage({ players, matches, predictions, teams, refresh, navigate }) {
+function PredictionsPage({ players, matches, predictions, teams, refresh, navigate, routeBase }) {
   const [matchView, setMatchView] = useState('upcoming');
   const [expandedMatchIds, setExpandedMatchIds] = useState(() => new Set());
   const [refreshState, setRefreshState] = useState('idle');
@@ -1405,6 +1421,7 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
                 activePlayerCount={activePlayerCount}
                 teams={teams}
                 navigate={navigate}
+                routeBase={routeBase}
                 expanded
                 live
               />
@@ -1443,6 +1460,7 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
                   activePlayerCount={activePlayerCount}
                   teams={teams}
                   navigate={navigate}
+                  routeBase={routeBase}
                   expanded={expandedMatchIds.has(match.id)}
                   onToggle={() => toggleExpanded(match.id)}
                 />
@@ -1466,6 +1484,7 @@ function PicksMatchSummary({
   activePlayerCount,
   teams,
   navigate,
+  routeBase,
   expanded,
   onToggle,
   live = false,
@@ -1481,9 +1500,9 @@ function PicksMatchSummary({
       <div className="picks-summary-main">
         <div>
           <div className="dashboard-match-teams">
-            <DashboardTeamLink team={teamIdentity(match.team_a, teams)} navigate={navigate} />
+            <DashboardTeamLink team={teamIdentity(match.team_a, teams)} navigate={navigate} routeBase={routeBase} />
             <small>vs</small>
-            <DashboardTeamLink team={teamIdentity(match.team_b, teams)} navigate={navigate} />
+            <DashboardTeamLink team={teamIdentity(match.team_b, teams)} navigate={navigate} routeBase={routeBase} />
           </div>
           <span>{match.group_name || match.stage || 'Match'} - {formatDate(match.kickoff_time)}</span>
         </div>
@@ -1598,9 +1617,9 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
   );
 }
 
-function DashboardTeamLink({ team, navigate }) {
+function DashboardTeamLink({ team, navigate, routeBase = '' }) {
   const openNation = () => {
-    if (team?.slug && navigate) navigate(`/nations/${team.slug}`);
+    if (team?.slug && navigate) navigate(buildRoute(routeBase, `/nations/${team.slug}`));
   };
   return (
     <button className="dashboard-team-link" onClick={openNation} disabled={!team?.slug} title={`Open ${team.name} profile`}>
@@ -1646,7 +1665,20 @@ function AdminPage(props) {
   return <AdminTools {...props} />;
 }
 
-function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
+function AdminTools({
+  matches,
+  refresh,
+  setMessage,
+  setError,
+  tournament,
+  tournaments,
+  sourceTournaments,
+  allPlayers,
+  allMatches,
+  allPredictions,
+  allTeamFavorites,
+  navigate,
+}) {
   const blank = {
     external_match_id: '',
     stage: 'Group Stage',
@@ -1782,7 +1814,7 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
         ...(tournament?.id ? { tournament_id: tournament.id } : {}),
       }));
       if (!fixtures.length) throw new Error('No valid fixtures found.');
-      const { error } = await supabase.from('matches').upsert(fixtures, { onConflict: 'external_match_id' });
+      const { error } = await supabase.from('matches').upsert(fixtures, { onConflict: 'tournament_id,external_match_id' });
       throwIfError(error);
       setMessage(`Imported ${fixtures.length} fixture${fixtures.length === 1 ? '' : 's'}.`);
       await refresh();
@@ -1814,6 +1846,9 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
       if (payload.live) {
         parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}`);
       }
+      if (payload.clones?.refreshed) {
+        parts.push(`clones refreshed ${payload.clones.refreshed}`);
+      }
       const warningCount = (payload.prematch?.warnings?.length || 0) + (payload.live?.warnings?.length || 0);
       setMessage(`Manual sync complete: ${parts.join('; ') || payload.sync}${warningCount ? `; ${warningCount} provider warning${warningCount === 1 ? '' : 's'}` : ''}.`);
       await refresh();
@@ -1827,6 +1862,18 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
   return (
     <section>
       <PageTitle title="Admin" action={<button onClick={refresh}>Refresh</button>} />
+      <CloneGroupsPanel
+        tournaments={tournaments}
+        sourceTournaments={sourceTournaments}
+        players={allPlayers}
+        matches={allMatches}
+        predictions={allPredictions}
+        favorites={allTeamFavorites}
+        refresh={refresh}
+        setMessage={setMessage}
+        setError={setError}
+        navigate={navigate}
+      />
       <div className="admin-grid">
         <div className="panel">
           <h2>{editingId ? 'Edit match' : 'Add match'}</h2>
@@ -1926,6 +1973,173 @@ function AdminTools({ matches, refresh, setMessage, setError, tournament }) {
   );
 }
 
+function CloneGroupsPanel({
+  tournaments,
+  sourceTournaments,
+  players,
+  matches,
+  predictions,
+  favorites,
+  refresh,
+  setMessage,
+  setError,
+  navigate,
+}) {
+  const defaultSourceId = sourceTournaments[0]?.id || '';
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [sourceTournamentId, setSourceTournamentId] = useState(defaultSourceId);
+  const [busy, setBusy] = useState('');
+  const clones = tournaments.filter((item) => item.is_clone);
+  const sourceById = new Map(tournaments.map((item) => [item.id, item]));
+
+  useEffect(() => {
+    if (!sourceTournamentId && defaultSourceId) setSourceTournamentId(defaultSourceId);
+  }, [defaultSourceId, sourceTournamentId]);
+
+  const runCloneAction = async (body) => {
+    const response = await fetch('/api/clone-groups', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': sessionStorage.getItem('admin-password') || ADMIN_PASSWORD,
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Clone operation failed.');
+    return payload;
+  };
+
+  const createClone = async () => {
+    setMessage('');
+    setError('');
+    setBusy('create');
+    try {
+      const payload = await runCloneAction({
+        action: 'create',
+        name,
+        slug,
+        source_tournament_id: sourceTournamentId,
+      });
+      setMessage(`Created ${payload.clone.name}. Copied ${payload.copy.matches || 0} matches.`);
+      setName('');
+      setSlug('');
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not create clone group.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const refreshClone = async (clone) => {
+    setMessage('');
+    setError('');
+    setBusy(clone.id);
+    try {
+      const payload = await runCloneAction({ action: 'refresh', clone_tournament_id: clone.id });
+      setMessage(`Refreshed ${clone.name} from ${payload.source.name}. Copied ${payload.copy.matches || 0} matches.`);
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not refresh clone group.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const copyShareLink = async (clone) => {
+    const link = `${window.location.origin}/g/${clone.slug}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setMessage(`Copied share link for ${clone.name}.`);
+    } catch {
+      setMessage(`Share link: ${link}`);
+    }
+  };
+
+  return (
+    <section className="panel clone-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Group clones</h2>
+          <p className="muted">Create private groups that copy football data from an original app without extra provider calls.</p>
+        </div>
+      </div>
+      <div className="clone-create-grid">
+        <AdminInput label="Group name" value={name} onChange={(value) => {
+          setName(value);
+          if (!slug) setSlug(slugifyTeamName(value));
+        }} />
+        <AdminInput label="Group slug" value={slug} onChange={(value) => setSlug(slugifyTeamName(value))} />
+        <label>
+          Source app
+          <select value={sourceTournamentId} onChange={(event) => setSourceTournamentId(event.target.value)}>
+            {sourceTournaments.map((source) => (
+              <option key={source.id} value={source.id}>{source.name}</option>
+            ))}
+          </select>
+        </label>
+        <button className="primary" onClick={createClone} disabled={busy === 'create' || !sourceTournamentId}>
+          {busy === 'create' ? 'Creating...' : 'Create clone'}
+        </button>
+      </div>
+      <div className="clone-grid">
+        {clones.map((clone) => {
+          const kpis = getCloneKpis(clone, { players, matches, predictions, favorites });
+          const source = sourceById.get(clone.source_tournament_id);
+          return (
+            <article className="clone-card" key={clone.id}>
+              <div>
+                <strong>{clone.name}</strong>
+                <p className="muted">Source: {source?.name || 'Unknown source'}</p>
+                <p className="muted">Last internal refresh: {clone.last_internal_refresh_at ? formatDate(clone.last_internal_refresh_at) : 'Not refreshed yet'}</p>
+              </div>
+              <div className="clone-kpis">
+                <span><strong>{kpis.players}</strong> players</span>
+                <span><strong>{kpis.activePlayers}</strong> active</span>
+                <span><strong>{kpis.predictions}</strong> picks</span>
+                <span><strong>{kpis.publishedMatches}</strong> published</span>
+                <span><strong>{kpis.completedMatches}</strong> completed</span>
+                <span><strong>{kpis.favorites}</strong> favorites</span>
+              </div>
+              <p className="muted">Last activity: {kpis.lastActivity ? formatDate(kpis.lastActivity) : 'No player activity yet'}</p>
+              <div className="button-row">
+                <button onClick={() => navigate(`/g/${clone.slug}`)}>Open</button>
+                <button onClick={() => copyShareLink(clone)}>Copy link</button>
+                <button onClick={() => refreshClone(clone)} disabled={busy === clone.id}>
+                  {busy === clone.id ? 'Refreshing...' : 'Refresh from source'}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {!clones.length && <p className="muted">No clones yet. Create one from an original source app above.</p>}
+    </section>
+  );
+}
+
+function getCloneKpis(clone, { players, matches, predictions, favorites }) {
+  const clonePlayers = players.filter((player) => player.tournament_id === clone.id);
+  const cloneMatches = matches.filter((match) => match.tournament_id === clone.id);
+  const clonePredictions = predictions.filter((prediction) => prediction.tournament_id === clone.id);
+  const cloneFavorites = favorites.filter((favorite) => favorite.tournament_id === clone.id);
+  return {
+    players: clonePlayers.length,
+    activePlayers: clonePlayers.filter(isPlayerActive).length,
+    predictions: clonePredictions.length,
+    favorites: cloneFavorites.length,
+    publishedMatches: cloneMatches.filter((match) => match.is_published).length,
+    completedMatches: cloneMatches.filter(isFinalScoreComplete).length,
+    lastActivity: latestTimestamp([
+      ...clonePlayers.map((player) => player.created_at),
+      ...clonePredictions.map((prediction) => prediction.updated_at || prediction.submitted_at),
+      ...cloneFavorites.map((favorite) => favorite.created_at),
+    ]),
+  };
+}
+
 function AdminInput({ label, value, onChange, type = 'text' }) {
   return (
     <label>
@@ -1944,22 +2158,22 @@ function PageTitle({ title, action }) {
   );
 }
 
-function NeedPlayer({ navigate }) {
+function NeedPlayer({ navigate, routeBase = '' }) {
   return (
     <div className="panel centered">
       <h1>Enter your name first</h1>
       <p className="muted">Your profile lets the app save predictions to the shared leaderboard.</p>
-      <button className="primary" onClick={() => navigate('/')}>Go to welcome page</button>
+      <button className="primary" onClick={() => navigate(buildRoute(routeBase, '/'))}>Go to welcome page</button>
     </div>
   );
 }
 
-function InactivePlayer({ navigate }) {
+function InactivePlayer({ navigate, routeBase = '' }) {
   return (
     <div className="panel centered">
       <h1>Profile inactive</h1>
       <p className="muted">This duplicate profile was deactivated. Use the active profile for this display name.</p>
-      <button className="primary" onClick={() => navigate('/')}>Go to welcome page</button>
+      <button className="primary" onClick={() => navigate(buildRoute(routeBase, '/'))}>Go to welcome page</button>
     </div>
   );
 }
@@ -1983,8 +2197,32 @@ function useRoute() {
 
 function normalizeRoute(value) {
   const path = String(value || '/').split(/[?#]/)[0] || '/';
+  const groupMatch = path.match(/^\/g\/([^/]+)(\/.*)?$/);
+  if (groupMatch) {
+    const groupPath = groupMatch[2] || '/';
+    const normalizedGroupPath = normalizePageRoute(groupPath);
+    return `/g/${groupMatch[1]}${normalizedGroupPath === '/' ? '' : normalizedGroupPath}`;
+  }
+  return normalizePageRoute(path);
+}
+
+function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
   return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/admin'].includes(path) ? path : '/';
+}
+
+function getRouteGroupSlug(route) {
+  return String(route || '').match(/^\/g\/([^/]+)/)?.[1] || '';
+}
+
+function getPageRoute(route) {
+  const groupMatch = String(route || '/').match(/^\/g\/[^/]+(\/.*)?$/);
+  return groupMatch ? groupMatch[1] || '/' : route;
+}
+
+function buildRoute(routeBase, pageRoute = '/') {
+  if (!routeBase) return pageRoute;
+  return `${routeBase}${pageRoute === '/' ? '' : pageRoute}`;
 }
 
 function useStoredPlayer() {

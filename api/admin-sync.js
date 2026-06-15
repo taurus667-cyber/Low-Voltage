@@ -1,4 +1,7 @@
 import { isAdminAuthorized, toPublicErrorMessage } from './api-football.js';
+import { createClient } from '@supabase/supabase-js';
+import { getActiveTournament, getRequiredServerEnv } from './api-football.js';
+import { refreshCloneGroup } from './clone-groups.js';
 import { runLiveScoreSync } from './sync-live-scores.js';
 import { runPrematchSync } from './sync-prematch-data.js';
 
@@ -15,11 +18,34 @@ export default async function handler(request, response) {
 
     if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematchSync();
     if (sync === 'live' || sync === 'all') result.live = await runLiveScoreSync();
+    result.clones = await refreshLinkedClones();
 
     return response.status(200).json({ sync, ...result });
   } catch (error) {
     return response.status(500).json({ error: toPublicErrorMessage(error) });
   }
+}
+
+async function refreshLinkedClones() {
+  const required = getRequiredServerEnv();
+  if (required.error) return { refreshed: 0, skipped: required.error };
+  const supabase = createClient(required.supabaseUrl, required.serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const source = await getActiveTournament(supabase);
+  if (!source?.id) return { refreshed: 0 };
+  const { data: clones, error } = await supabase
+    .from('tournaments')
+    .select('id,name')
+    .eq('is_clone', true)
+    .eq('source_tournament_id', source.id);
+  if (error) throw error;
+  const refreshed = [];
+  for (const clone of clones || []) {
+    const result = await refreshCloneGroup(supabase, clone.id);
+    refreshed.push({ id: clone.id, name: clone.name, matches: result.copy.matches || 0 });
+  }
+  return { source: source.slug, refreshed: refreshed.length, groups: refreshed };
 }
 
 async function getRequestBody(request) {

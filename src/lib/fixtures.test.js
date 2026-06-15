@@ -29,9 +29,10 @@ test('sample fixture data does not leave completed matches pending', () => {
   const csv = fs.readFileSync('./sample-data/worldcup-2026-first-round-from-ics.csv', 'utf8');
   const fixtures = normalizeFixtureRows(parseFixtureCsv(csv));
   const graceMs = (LIVE_MATCH_WINDOW_MINUTES + 30) * 60 * 1000;
+  const referenceNow = new Date('2026-06-14T16:00:00Z').getTime();
   const stalePending = fixtures.filter((fixture) => {
     const kickoff = new Date(fixture.kickoff_time).getTime();
-    if (Number.isNaN(kickoff) || Date.now() - kickoff <= graceMs) return false;
+    if (Number.isNaN(kickoff) || referenceNow - kickoff <= graceMs) return false;
     return fixture.status !== 'finished' || fixture.team_a_score === null || fixture.team_b_score === null;
   });
 

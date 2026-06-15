@@ -1169,6 +1169,54 @@ th {
   align-items: start;
 }
 
+.clone-panel {
+  margin-bottom: 1rem;
+}
+
+.clone-create-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.clone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.clone-card {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.85rem;
+}
+
+.clone-card p {
+  margin: 0.2rem 0 0;
+}
+
+.clone-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.clone-kpis span {
+  border-radius: 8px;
+  background: #eef7f4;
+  color: #315b52;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.88rem;
+}
+
+.clone-kpis strong {
+  color: #0f766e;
+}
+
 .toggle-row,
 .button-row,
 .admin-actions {
@@ -1228,6 +1276,7 @@ th {
 
   .hero,
   .admin-grid,
+  .clone-create-grid,
   .admin-match {
     grid-template-columns: 1fr;
   }
