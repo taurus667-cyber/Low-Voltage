@@ -96,10 +96,18 @@ nav button {
 }
 
 nav button.active,
+.help-link.active,
 .primary {
   border-color: #0f766e;
   background: #0f766e;
   color: #ffffff;
+}
+
+.help-link {
+  min-height: 38px;
+  padding: 0.5rem 0.75rem;
+  margin-left: auto;
+  font-size: 0.88rem;
 }
 
 .ghost {
@@ -1258,10 +1266,106 @@ th {
   text-align: center;
 }
 
+.help-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.help-intro h2 {
+  margin-bottom: 0;
+  font-size: 1.45rem;
+}
+
+.help-actions,
+.help-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.help-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.help-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.help-card {
+  align-content: start;
+}
+
+.help-card h2,
+.help-section h2 {
+  margin-bottom: 0;
+}
+
+.help-card p,
+.help-section p,
+.help-item p {
+  margin-bottom: 0;
+  color: #5f736d;
+  line-height: 1.55;
+}
+
+.help-step {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 999px;
+  background: #e8f4f1;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.help-section {
+  gap: 1rem;
+}
+
+.help-link-list {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 0.75rem 1rem;
+  align-items: center;
+}
+
+.help-link-list button {
+  justify-self: start;
+  width: 100%;
+}
+
+.help-faq {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.help-item {
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.95rem 1rem;
+  box-shadow: 0 8px 22px rgba(33, 57, 50, 0.05);
+}
+
+.help-item summary {
+  cursor: pointer;
+  color: #16201d;
+  font-weight: 800;
+}
+
+.help-item p {
+  padding-top: 0.75rem;
+}
+
 @media (max-width: 760px) {
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .help-link {
+    width: 100%;
+    margin-left: 0;
   }
 
   nav {
@@ -1288,8 +1392,15 @@ th {
   }
 
   .score-row,
-  .two-col {
+  .two-col,
+  .help-actions,
+  .help-grid,
+  .help-link-list {
     grid-template-columns: 1fr;
+  }
+
+  .help-link-list button {
+    justify-self: stretch;
   }
 
   .teams,

@@ -185,6 +185,9 @@ function App() {
         <button className="brand" onClick={() => navigate(buildRoute(routeBase, '/'))}>
           {activeTournament.name} Picks
         </button>
+        <button className={`help-link ${pageRoute === '/help' ? 'active' : ''}`} onClick={() => navigate(buildRoute(routeBase, '/help'))}>
+          Help
+        </button>
         <nav aria-label="Primary navigation">
           <button className={pageRoute === '/matches' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/matches'))}>
             Matches
@@ -224,6 +227,7 @@ function App() {
         {pageRoute.startsWith('/nations/') && <NationPage {...pageProps} route={pageRoute} />}
         {pageRoute === '/leaderboard' && <LeaderboardPage {...pageProps} />}
         {pageRoute === '/admin' && <AdminPage {...pageProps} />}
+        {pageRoute === '/help' && <HelpPage {...pageProps} />}
       </main>
     </div>
   );
@@ -2164,6 +2168,117 @@ function AdminInput({ label, value, onChange, type = 'text' }) {
   );
 }
 
+function HelpPage({ navigate, routeBase }) {
+  const goTo = (pageRoute) => navigate(buildRoute(routeBase, pageRoute));
+  return (
+    <section className="help-page">
+      <PageTitle title="How to play" />
+
+      <div className="panel help-intro">
+        <p className="eyebrow">Quick guide</p>
+        <h2>Make your picks, follow the match, and enjoy the family leaderboard.</h2>
+        <p className="muted">
+          This page explains the basics in plain language. Your group may be the main app or a private family group, but the steps are the same.
+        </p>
+        <div className="help-actions">
+          <button className="primary" onClick={() => goTo('/matches')}>Go to matches</button>
+          <button onClick={() => goTo('/predictions')}>Check picks</button>
+          <button onClick={() => goTo('/leaderboard')}>View leaderboard</button>
+        </div>
+      </div>
+
+      <div className="help-grid">
+        <article className="panel help-card">
+          <span className="help-step">1</span>
+          <h2>Enter your name</h2>
+          <p>Start on the welcome page and choose the display name you want to use in this group.</p>
+        </article>
+        <article className="panel help-card">
+          <span className="help-step">2</span>
+          <h2>Predict scores</h2>
+          <p>Open Matches, type the final score you expect, and submit before the match closes.</p>
+        </article>
+        <article className="panel help-card">
+          <span className="help-step">3</span>
+          <h2>Follow results</h2>
+          <p>After matches are played, check Picks and Leaderboard to see how everyone did.</p>
+        </article>
+      </div>
+
+      <section className="panel help-section">
+        <h2>What each page is for</h2>
+        <div className="help-link-list">
+          <button onClick={() => goTo('/matches')}>Matches</button>
+          <p>Submit predictions, see live scores, open Match Insight, and review played-match recaps.</p>
+          <button onClick={() => goTo('/predictions')}>Picks</button>
+          <p>Check your own predictions and see everyone else after picks are revealed.</p>
+          <button onClick={() => goTo('/groups')}>Groups</button>
+          <p>See group tables and schedules. Tap a country flag or name to open its nation page.</p>
+          <button onClick={() => goTo('/favorites')}>Favorites</button>
+          <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
+          <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
+          <p>Track points after matches finish. Your name appears once you submit a prediction.</p>
+        </div>
+      </section>
+
+      <section className="help-faq" aria-label="Frequently asked questions">
+        {[
+          {
+            question: 'Why can I not see other people predictions?',
+            answer:
+              'Predictions stay hidden before kickoff or before the admin reveals them. This keeps the game fair, so nobody can copy another player pick.',
+          },
+          {
+            question: 'Can I change my prediction?',
+            answer:
+              'Yes, while the match is still open. Once kickoff time passes or the admin locks the match, predictions close and the score cannot be changed.',
+          },
+          {
+            question: 'What does Closed after kickoff mean?',
+            answer:
+              'It means the match start time has passed. The app closes predictions automatically at kickoff, even if the match was not manually locked by the admin.',
+          },
+          {
+            question: 'How are points calculated?',
+            answer:
+              'An exact score gives 3 points. A correct match outcome gives 1 point. For example, predicting the winner correctly but not the exact score earns 1 point.',
+          },
+          {
+            question: 'Why is my name missing from the leaderboard?',
+            answer:
+              'The leaderboard only shows players who submitted at least one prediction. Submit your first pick and your name will appear.',
+          },
+          {
+            question: 'What is Match Insight?',
+            answer:
+              'Match Insight gives quick helper information before the match. It is collapsed by default to keep the page short, but the header shows when extra information is available.',
+          },
+          {
+            question: 'What is Match Recap?',
+            answer:
+              'Match Recap appears for played matches and shows useful information from the match, such as formations, stats, key events, and goals.',
+          },
+          {
+            question: 'What happens in a private family group?',
+            answer:
+              'A private group has its own players, predictions, favorites, and leaderboard. The match schedule and football data are shared from the main app so the group does not need a separate setup.',
+          },
+          {
+            question: 'Can I use the same name in different private groups?',
+            answer:
+              'Yes. Each private group is separate, so your picks and leaderboard position stay inside that group.',
+          },
+        ].map((item) => (
+          <details className="help-item" key={item.question}>
+            <summary>{item.question}</summary>
+            <p>{item.answer}</p>
+          </details>
+        ))}
+      </section>
+    </section>
+  );
+}
+
 function PageTitle({ title, action }) {
   return (
     <div className="page-title">
@@ -2223,7 +2338,7 @@ function normalizeRoute(value) {
 
 function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
-  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/admin'].includes(path) ? path : '/';
+  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/admin', '/help'].includes(path) ? path : '/';
 }
 
 function getRouteGroupSlug(route) {
