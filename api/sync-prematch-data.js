@@ -6,6 +6,7 @@ import {
   isAuthorized,
   normalizeTeamName,
 } from './api-football.js';
+import { refreshLinkedClonesForSource } from './clone-groups.js';
 import { getTeamMetadata, slugifyTeamName } from '../src/lib/teamMetadata.js';
 
 const LOOKAHEAD_DAYS = 14;
@@ -66,6 +67,12 @@ export async function runPrematchSync() {
   }
   await upsertRows(supabase, 'match_prediction_aids', aids, 'match_id,provider,aid_type');
   await upsertRows(supabase, 'match_odds', oddsRows, 'match_id,provider,bookmaker,market');
+  let clones = { refreshed: 0 };
+  try {
+    clones = await refreshLinkedClonesForSource(supabase, tournament);
+  } catch (error) {
+    clones = { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
+  }
 
   return {
     tournament: tournament.slug,
@@ -73,6 +80,7 @@ export async function runPrematchSync() {
     linkedFixtures: fixtureUpdates.length,
     aids: aids.length,
     odds: oddsRows.length,
+    clones,
     warnings,
   };
 }

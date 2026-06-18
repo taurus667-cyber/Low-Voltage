@@ -18,7 +18,7 @@ export default async function handler(request, response) {
 
     if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematchSync();
     if (sync === 'live' || sync === 'all') result.live = await runLiveScoreSync();
-    result.clones = result.live?.clones || await refreshLinkedClones();
+    result.clones = result.live?.clones || result.prematch?.clones || await refreshLinkedClones();
 
     return response.status(200).json({ sync, ...result });
   } catch (error) {
