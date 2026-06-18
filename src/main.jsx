@@ -269,6 +269,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
   const [top10Code, setTop10Code] = useState('');
   const upgradeNameValidation = upgradePlayer ? validatePlayerFullName(name) : null;
   const upgradeTargetName = upgradeNameValidation?.valid ? upgradeNameValidation.name : 'Add first and last name';
+  const upgradeHelpText = 'Add the last name, then use the update button. This keeps the same profile and saved picks.';
 
   const savePlayer = async (mode = 'auto') => {
     if (mode.startsWith('existing:')) {
@@ -282,7 +283,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
         setMatches([]);
         setProtectedClaim(null);
         setTop10Code('');
-        setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
+        setEntryError(upgradeHelpText);
         return;
       }
     }
@@ -358,7 +359,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
           setName(`${existing.name} `);
           setMatches([]);
           setProtectedClaim(null);
-          setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
+          setEntryError(upgradeHelpText);
           return;
         }
         if (protectedClaim?.player?.id === existing.id) {
@@ -441,7 +442,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
       setUpgradePlayer(player);
       setName(`${player.name} `);
       setProtectedClaim(null);
-      setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
+      setEntryError(upgradeHelpText);
       return;
     }
     navigate(buildRoute(routeBase, '/matches'));
@@ -466,7 +467,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
             setMatches([]);
             setProtectedClaim(null);
             setTop10Code('');
-            setEntryError(upgradePlayer ? 'Add your last name, then press Continue. This updates the same profile, so your picks stay saved.' : '');
+            setEntryError(upgradePlayer ? upgradeHelpText : '');
           }}
           placeholder="First Last"
           maxLength={40}
