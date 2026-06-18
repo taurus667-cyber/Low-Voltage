@@ -49,7 +49,11 @@ function App() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [top10Celebration, setTop10Celebration] = useState(null);
-  const [top10Protection, setTop10Protection] = useState(null);
+  const [top10Protection, setTop10ProtectionState] = useState(() => readStoredTop10Protection());
+  const setTop10Protection = useCallback((value) => {
+    setTop10ProtectionState(value);
+    writeStoredTop10Protection(value);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -133,17 +137,26 @@ function App() {
       player_token: player.player_token,
     });
     if (payload.protected && payload.code) {
-      const protection = { protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' };
+      const protection = { protected: true, playerId: player.id, code: payload.code, statusLabel: payload.status_label || 'Top 10' };
       setTop10Protection(protection);
       return { ...payload, ...protection };
     }
-    const protection = { protected: false };
+    const protection = { protected: false, playerId: player.id };
     setTop10Protection(protection);
     return { ...payload, ...protection };
   }, [activeTournament?.id, player?.id, player?.player_token]);
+  useEffect(() => {
+    if (!player?.id) {
+      setTop10Protection(null);
+      return;
+    }
+    if (top10Protection?.playerId && top10Protection.playerId !== player.id) {
+      setTop10Protection(null);
+    }
+  }, [player?.id, top10Protection?.playerId, setTop10Protection]);
   const openTop10Celebration = useCallback(async () => {
     try {
-      const protection = top10Protection?.code ? top10Protection : await loadTop10Protection();
+      const protection = top10Protection?.code && top10Protection.playerId === player?.id ? top10Protection : await loadTop10Protection();
       if (!protection?.code) {
         navigate(buildRoute(routeBase, '/top10-code'));
         return;
@@ -171,7 +184,7 @@ function App() {
         await runTop10Request({ action: 'sync', tournament_id: activeTournament.id });
         const payload = await loadTop10Protection();
         if (!cancelled && payload.protected && payload.firstReveal && payload.code) {
-          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+          setTop10Protection({ protected: true, playerId: player.id, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
           setTop10Celebration(createTop10Celebration({
             player: currentScopedPlayer || player,
             code: payload.code,
@@ -179,9 +192,9 @@ function App() {
             firstReveal: true,
           }));
         } else if (!cancelled && payload.protected && payload.code) {
-          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+          setTop10Protection({ protected: true, playerId: player.id, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
         } else if (!cancelled) {
-          setTop10Protection({ protected: false });
+          setTop10Protection({ protected: false, playerId: player.id });
         }
       } catch {
         // The offline preview has no API server; production uses this for Top 10 protection.
@@ -431,7 +444,7 @@ function HomePage({
           code: top10Code,
           name: cleanName,
         });
-        const data = payload.player;
+        const data = { ...payload.player, player_token: payload.player?.player_token || player?.player_token };
         setPlayer(data);
         setPlayers((current) => current.map((item) => (item.id === data.id ? { ...item, ...data, player_token: undefined } : item)));
         setUpgradePlayer(null);
@@ -439,7 +452,7 @@ function HomePage({
         setTop10Code('');
         await refresh();
         if (payload.protectionCode) {
-          setTop10Protection({ protected: true, code: payload.protectionCode, statusLabel: 'Top 10' });
+          setTop10Protection({ protected: true, playerId: data.id, code: payload.protectionCode, statusLabel: 'Top 10' });
           setTop10Celebration(createTop10Celebration({
             player: data,
             code: payload.protectionCode,
@@ -1465,7 +1478,7 @@ function Top10CodePage({
 }) {
   const [loadingCode, setLoadingCode] = useState(false);
   const [codeError, setCodeError] = useState('');
-  const code = top10Protection?.code || '';
+  const code = top10Protection?.playerId === storedPlayer?.id ? top10Protection?.code || '' : '';
 
   useEffect(() => {
     if (!tournament?.id || !storedPlayer?.id || !storedPlayer?.player_token || code) return;
@@ -1482,9 +1495,9 @@ function Top10CodePage({
         });
         if (cancelled) return;
         if (payload.protected && payload.code) {
-          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+          setTop10Protection({ protected: true, playerId: storedPlayer.id, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
         } else {
-          setTop10Protection({ protected: false });
+          setTop10Protection({ protected: false, playerId: storedPlayer.id });
         }
       } catch (err) {
         if (!cancelled) setCodeError(err.message || 'Could not load your Top 10 code.');
@@ -1527,7 +1540,9 @@ function Top10CodePage({
         {loadingCode && <p className="muted">Loading your private code...</p>}
         {code && <div className="top10-code-display">{code}</div>}
         {!loadingCode && !code && !codeError && (
-          <p className="muted">No protected Top 10 code is available for this saved browser yet.</p>
+          <p className="muted">
+            This browser can see your current Top 10 rank, but it does not have the private code saved yet. Open the Top 10 badge after redeploy, or ask the admin to reset/reveal your code if this profile was upgraded before code saving was available.
+          </p>
         )}
         {codeError && <p className="entry-error">{codeError}</p>}
         {code && <button className="primary" onClick={openCelebration}>Open Top 10 status</button>}
@@ -2893,6 +2908,22 @@ function useStoredPlayer() {
     else localStorage.removeItem('current-player');
   };
   return [player, setPlayer];
+}
+
+function readStoredTop10Protection() {
+  try {
+    return JSON.parse(localStorage.getItem('top10-protection') || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredTop10Protection(value) {
+  if (value?.protected && value?.code && value?.playerId) {
+    localStorage.setItem('top10-protection', JSON.stringify(value));
+  } else {
+    localStorage.removeItem('top10-protection');
+  }
 }
 
 function parseScore(value) {
