@@ -268,7 +268,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
   const [protectedClaim, setProtectedClaim] = useState(null);
   const [top10Code, setTop10Code] = useState('');
   const upgradeNameValidation = upgradePlayer ? validatePlayerFullName(name) : null;
-  const upgradeTargetName = upgradeNameValidation?.valid ? upgradeNameValidation.name : 'Add first and last name';
+  const upgradeTargetName = upgradeNameValidation?.valid ? upgradeNameValidation.name : '';
   const upgradeHelpText = 'Add the last name, then use the update button. This keeps the same profile and saved picks.';
 
   const savePlayer = async (mode = 'auto') => {
@@ -483,9 +483,11 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
             <span>
               Current name: <b>{upgradePlayer.name}</b>
             </span>
-            <span>
-              New name: <b>{upgradeTargetName}</b>
-            </span>
+            {upgradeTargetName && (
+              <span>
+                New name: <b>{upgradeTargetName}</b>
+              </span>
+            )}
             <small>Your saved picks stay with this same profile.</small>
           </div>
         )}
