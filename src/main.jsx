@@ -419,6 +419,15 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
         await refresh();
         return;
       }
+      if (upgradePlayer && /top 10 code/i.test(err.message || '')) {
+        setProtectedClaim({ player: upgradePlayer, action: 'rename' });
+        setEntryError(
+          /incorrect/i.test(err.message || '')
+            ? 'That Top 10 code is incorrect. Check the 4-character code and try again.'
+            : `${upgradePlayer.name} has Top 10 protection. Enter the 4-character code to update this profile.`,
+        );
+        return;
+      }
       setEntryError(err.message || 'Could not save player.');
     }
   };
@@ -481,14 +490,20 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
         {protectedClaim && (
           <div className="duplicate-box">
             <strong>Top 10 protected profile</strong>
-            <span>Enter the code for {protectedClaim.player.name} to keep using the existing profile and saved picks.</span>
+            <span>
+              {protectedClaim.action === 'rename'
+                ? `Enter the code for ${protectedClaim.player.name} to update this protected profile without losing picks.`
+                : `Enter the code for ${protectedClaim.player.name} to keep using the existing profile and saved picks.`}
+            </span>
             <input
               value={top10Code}
               onChange={(event) => setTop10Code(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
               placeholder="A7K2"
               maxLength={4}
             />
-            <button onClick={() => savePlayer(`existing:${protectedClaim.player.id}`)}>Unlock {protectedClaim.player.name}</button>
+            <button onClick={() => (protectedClaim.action === 'rename' ? savePlayer() : savePlayer(`existing:${protectedClaim.player.id}`))}>
+              {protectedClaim.action === 'rename' ? `Update ${protectedClaim.player.name} with code` : `Unlock ${protectedClaim.player.name}`}
+            </button>
           </div>
         )}
         {player && !upgradePlayer && (
