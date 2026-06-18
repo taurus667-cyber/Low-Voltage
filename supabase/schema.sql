@@ -233,6 +233,21 @@ create table if not exists public.standings_checks (
   created_at timestamp with time zone not null default now()
 );
 
+create table if not exists public.top10_player_codes (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid references public.tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  code text not null check (code ~ '^[A-Z0-9]{4}$'),
+  status_label text not null default 'Top 10',
+  awarded_rank integer,
+  awarded_points integer,
+  awarded_after_match_id uuid references public.matches(id) on delete set null,
+  shown_at timestamp with time zone,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now(),
+  unique(player_id)
+);
+
 create index if not exists idx_players_name on public.players (lower(name));
 create unique index if not exists idx_players_tournament_active_name_unique
 on public.players (tournament_id, lower(regexp_replace(btrim(name), '\s+', ' ', 'g')))
@@ -261,6 +276,7 @@ create index if not exists idx_match_odds_match_id on public.match_odds (match_i
 create index if not exists idx_teams_slug on public.teams (slug);
 create index if not exists idx_player_favorite_teams_player_id on public.player_favorite_teams (player_id);
 create index if not exists idx_standings_checks_tournament_checked_at on public.standings_checks (tournament_id, checked_at desc);
+create index if not exists idx_top10_player_codes_tournament_id on public.top10_player_codes (tournament_id);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -339,9 +355,13 @@ alter table public.match_lineups enable row level security;
 alter table public.match_prediction_aids enable row level security;
 alter table public.match_odds enable row level security;
 alter table public.standings_checks enable row level security;
+alter table public.top10_player_codes enable row level security;
 
 drop policy if exists "tournaments_select_all" on public.tournaments;
 create policy "tournaments_select_all" on public.tournaments for select using (true);
+
+drop policy if exists "top10_player_codes_no_public_select" on public.top10_player_codes;
+create policy "top10_player_codes_no_public_select" on public.top10_player_codes for select using (false);
 
 drop policy if exists "players_select_all" on public.players;
 create policy "players_select_all" on public.players for select using (true);

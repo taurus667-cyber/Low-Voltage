@@ -7,6 +7,7 @@ import {
   normalizeTeamName,
   numberOrNull,
 } from './api-football.js';
+import { syncTop10Codes } from './top10-core.js';
 
 const ACTIVE_BEFORE_MINUTES = 30;
 const ACTIVE_AFTER_MINUTES = 180;
@@ -63,6 +64,12 @@ export async function runLiveScoreSync() {
   await upsertRows(supabase, 'match_events', eventRows, 'match_id,provider,event_key');
   await upsertRows(supabase, 'match_statistics', statisticRows, 'match_id,provider,team_name');
   await upsertRows(supabase, 'match_lineups', lineupRows, 'match_id,provider,team_name');
+  let top10 = { created: 0 };
+  try {
+    if (tournament.id) top10 = await syncTop10Codes(supabase, tournament.id);
+  } catch (error) {
+    top10 = { created: 0, warning: error.message || 'Top 10 protection sync skipped.' };
+  }
 
   return {
     tournament: tournament.slug,
@@ -72,6 +79,7 @@ export async function runLiveScoreSync() {
     events: eventRows.length,
     statistics: statisticRows.length,
     lineups: lineupRows.length,
+    top10,
   };
 }
 

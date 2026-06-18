@@ -10,6 +10,14 @@ export function getRequiredServerEnv() {
   return { supabaseUrl, serviceRoleKey, apiFootballKey };
 }
 
+export function getRequiredSupabaseEnv() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl) return { error: 'Missing SUPABASE_URL or VITE_SUPABASE_URL.' };
+  if (!serviceRoleKey) return { error: 'Missing SUPABASE_SERVICE_ROLE_KEY.' };
+  return { supabaseUrl, serviceRoleKey };
+}
+
 export function isAuthorized(request) {
   const expected = process.env.CRON_SECRET;
   if (!expected) return false;

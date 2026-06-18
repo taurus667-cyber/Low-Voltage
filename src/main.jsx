@@ -56,7 +56,7 @@ function App() {
     try {
       const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows, aidRows, oddsRows] = await Promise.all([
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
-        supabase.from('players').select('*').order('created_at'),
+        supabase.from('players').select('id,tournament_id,name,is_active,deactivated_at,deactivation_reason,created_at').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         supabase.from('predictions').select('*').order('submitted_at'),
         optionalSelect(supabase.from('teams').select('*').order('name')),
@@ -115,6 +115,31 @@ function App() {
   const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
   const currentScopedPlayer = scopedPlayers.find((item) => item.id === player?.id) || null;
 
+  useEffect(() => {
+    if (!activeTournament?.id || !player?.id || !player?.player_token) return;
+    let cancelled = false;
+    const syncAndRevealTop10Code = async () => {
+      try {
+        await runTop10Request({ action: 'sync', tournament_id: activeTournament.id });
+        const payload = await runTop10Request({
+          action: 'reveal',
+          tournament_id: activeTournament.id,
+          player_id: player.id,
+          player_token: player.player_token,
+        });
+        if (!cancelled && payload.protected && payload.firstReveal && payload.code) {
+          setMessage(`You are Top 10. Save this protection code: ${payload.code}. You will need it on a new browser or device.`);
+        }
+      } catch {
+        // The offline preview has no API server; production uses this for Top 10 protection.
+      }
+    };
+    syncAndRevealTop10Code();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTournament?.id, player?.id, player?.player_token]);
+
   const toggleTeamFavorite = async (team) => {
     setMessage('');
     setError('');
@@ -152,6 +177,7 @@ function App() {
   const pageProps = {
     player: currentScopedPlayer,
     setPlayer,
+    setPlayers,
     players: scopedPlayers,
     matches: scopedMatches,
     predictions: scopedPredictions,
@@ -234,10 +260,13 @@ function App() {
   );
 }
 
-function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate, tournament, routeBase }) {
+function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage, setError, navigate, tournament, routeBase }) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
   const [entryError, setEntryError] = useState('');
+  const [upgradePlayer, setUpgradePlayer] = useState(null);
+  const [protectedClaim, setProtectedClaim] = useState(null);
+  const [top10Code, setTop10Code] = useState('');
 
   const savePlayer = async (mode = 'auto') => {
     const nameValidation = validatePlayerFullName(name);
@@ -246,6 +275,15 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
     setError('');
     setEntryError('');
     if (!nameValidation.valid) {
+      const singleNameMatches = players.filter(
+        (item) => isPlayerActive(item) && normalizePlayerName(item.name) === normalizePlayerName(cleanName),
+      );
+      if (singleNameMatches.length) {
+        setMatches(singleNameMatches);
+        setProtectedClaim(null);
+        setEntryError('This existing profile uses one name. Choose it below, then add your last name to keep your picks.');
+        return;
+      }
       setEntryError(nameValidation.message);
       return;
     }
@@ -255,13 +293,85 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
     );
     if (sameName.length && mode === 'auto') {
       setMatches(sameName);
+      setProtectedClaim(null);
       return;
     }
 
     try {
+      if (upgradePlayer) {
+        const duplicateFullName = players.find(
+          (item) =>
+            item.id !== upgradePlayer.id &&
+            isPlayerActive(item) &&
+            normalizePlayerName(item.name) === normalizePlayerName(cleanName),
+        );
+        if (duplicateFullName) {
+          setMatches([duplicateFullName]);
+          setProtectedClaim(null);
+          setEntryError('That full name is already registered. Use the existing profile or choose a clearer full name.');
+          return;
+        }
+
+        const payload = await runTop10Request({
+          action: 'rename',
+          tournament_id: tournament.id,
+          player_id: upgradePlayer.id,
+          player_token: player?.id === upgradePlayer.id ? player.player_token : '',
+          code: top10Code,
+          name: cleanName,
+        });
+        const data = payload.player;
+        setPlayer(data);
+        setPlayers((current) => current.map((item) => (item.id === data.id ? { ...item, ...data, player_token: undefined } : item)));
+        setUpgradePlayer(null);
+        setTop10Code('');
+        await refresh();
+        setMessage(`Updated your profile to ${data.name}. Your picks are still saved.`);
+        navigate(buildRoute(routeBase, '/matches'));
+        return;
+      }
+
       if (mode.startsWith('existing:')) {
-        const existing = sameName.find((item) => item.id === mode.replace('existing:', ''));
+        const existingId = mode.replace('existing:', '');
+        const existing = players.find((item) => item.id === existingId && isPlayerActive(item));
         if (!existing) throw new Error('That player was not found.');
+        if (!validatePlayerFullName(existing.name).valid) {
+          setUpgradePlayer(existing);
+          setName(`${existing.name} `);
+          setMatches([]);
+          setProtectedClaim(null);
+          setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
+          return;
+        }
+        if (protectedClaim?.player?.id === existing.id) {
+          const payload = await runTop10Request({
+            action: 'verify',
+            tournament_id: tournament.id,
+            player_id: existing.id,
+            code: top10Code,
+          });
+          const verifiedPlayer = payload.player || existing;
+          setPlayer(verifiedPlayer);
+          setPlayers((current) => current.map((item) => (item.id === verifiedPlayer.id ? { ...item, ...verifiedPlayer, player_token: undefined } : item)));
+          setProtectedClaim(null);
+          setTop10Code('');
+          setMessage(`Welcome back, ${verifiedPlayer.name}.`);
+          navigate(buildRoute(routeBase, '/matches'));
+          return;
+        }
+        if (tournament?.id && player?.id !== existing.id) {
+          const status = await runTop10Request({
+            action: 'check',
+            tournament_id: tournament.id,
+            player_id: existing.id,
+          });
+          if (status.requiresCode) {
+            setProtectedClaim({ player: existing });
+            setTop10Code('');
+            setEntryError(`${existing.name} has Top 10 protection. Enter the 4-character code to continue with this profile.`);
+            return;
+          }
+        }
         setPlayer(existing);
         setMessage(`Welcome back, ${existing.name}.`);
         navigate(buildRoute(routeBase, '/matches'));
@@ -281,6 +391,7 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
         .single();
       throwIfError(error);
       setPlayer(data);
+      setPlayers((current) => [...current, { ...data, player_token: undefined }]);
       await refresh();
       setMessage(`Welcome, ${data.name}.`);
       navigate(buildRoute(routeBase, '/matches'));
@@ -300,7 +411,10 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
     setError('');
     setEntryError('');
     if (!nameValidation.valid) {
-      setEntryError('This saved profile uses a single name. Enter your first and last name to continue with a full-name profile.');
+      setUpgradePlayer(player);
+      setName(`${player.name} `);
+      setProtectedClaim(null);
+      setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
       return;
     }
     navigate(buildRoute(routeBase, '/matches'));
@@ -323,6 +437,9 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
           onChange={(event) => {
             setName(event.target.value);
             setMatches([]);
+            setUpgradePlayer(null);
+            setProtectedClaim(null);
+            setTop10Code('');
             setEntryError('');
           }}
           placeholder="First Last"
@@ -332,6 +449,19 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
           Continue
         </button>
         {entryError && <p className="entry-error" role="alert">{entryError}</p>}
+        {protectedClaim && (
+          <div className="duplicate-box">
+            <strong>Top 10 protected profile</strong>
+            <span>Enter the code for {protectedClaim.player.name} to keep using the existing profile and saved picks.</span>
+            <input
+              value={top10Code}
+              onChange={(event) => setTop10Code(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
+              placeholder="A7K2"
+              maxLength={4}
+            />
+            <button onClick={() => savePlayer(`existing:${protectedClaim.player.id}`)}>Unlock {protectedClaim.player.name}</button>
+          </div>
+        )}
         {player && (
           <button className="ghost" onClick={continueAsStoredPlayer}>
             Continue as {player.name}
@@ -340,10 +470,10 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
         {matches.length > 0 && (
           <div className="duplicate-box">
             <strong>Name already exists.</strong>
-            <span>Use the existing profile for this display name.</span>
+            <span>Use the existing profile for this name. If it has only one name, you can add the last name without losing picks.</span>
             {matches.map((item) => (
               <button key={item.id} onClick={() => savePlayer(`existing:${item.id}`)}>
-                Use {item.name}
+                {validatePlayerFullName(item.name).valid ? `Use ${item.name}` : `Update ${item.name}`}
               </button>
             ))}
           </div>
@@ -1867,7 +1997,7 @@ function AdminTools({
         parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
       }
       if (payload.live) {
-        parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}`);
+        parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}, top 10 new ${payload.live.top10?.created || 0}`);
       }
       if (payload.clones?.refreshed) {
         parts.push(`clones refreshed ${payload.clones.refreshed}`);
@@ -1896,6 +2026,11 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
         navigate={navigate}
+      />
+      <Top10CodesPanel
+        tournament={tournament}
+        setMessage={setMessage}
+        setError={setError}
       />
       <div className="admin-grid">
         <div className="panel">
@@ -2008,6 +2143,97 @@ function AdminLockButton({ match, quickUpdate }) {
     return <button onClick={() => quickUpdate(match.id, { is_locked: false })}>Unlock manual lock</button>;
   }
   return <button onClick={() => quickUpdate(match.id, { is_locked: true })}>Lock manually</button>;
+}
+
+function Top10CodesPanel({ tournament, setMessage, setError }) {
+  const [codes, setCodes] = useState([]);
+  const [busy, setBusy] = useState('');
+
+  const loadCodes = async () => {
+    if (!tournament?.id) return;
+    setBusy('load');
+    setMessage('');
+    setError('');
+    try {
+      const payload = await runTop10Request({
+        action: 'admin-list',
+        tournament_id: tournament.id,
+      }, true);
+      setCodes(payload.codes || []);
+    } catch (err) {
+      setError(err.message || 'Could not load Top 10 codes.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const syncCodes = async () => {
+    if (!tournament?.id) return;
+    setBusy('sync');
+    setMessage('');
+    setError('');
+    try {
+      const payload = await runTop10Request({
+        action: 'sync',
+        tournament_id: tournament.id,
+      });
+      setMessage(`Top 10 status synced. New protected players: ${payload.created || 0}.`);
+      await loadCodes();
+    } catch (err) {
+      setError(err.message || 'Could not sync Top 10 status.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const resetCode = async (codeRow) => {
+    setBusy(codeRow.id);
+    setMessage('');
+    setError('');
+    try {
+      const payload = await runTop10Request({
+        action: 'admin-reset',
+        tournament_id: tournament.id,
+        code_id: codeRow.id,
+      }, true);
+      setMessage(`Reset code for ${getProtectedPlayerName(payload.code)}.`);
+      await loadCodes();
+    } catch (err) {
+      setError(err.message || 'Could not reset Top 10 code.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <section className="panel top10-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Top 10 protection</h2>
+          <p className="muted">Protect players who have ever entered the Top 10 after a finished match.</p>
+        </div>
+        <div className="button-row">
+          <button onClick={syncCodes} disabled={Boolean(busy)}>{busy === 'sync' ? 'Syncing...' : 'Sync Top 10'}</button>
+          <button onClick={loadCodes} disabled={Boolean(busy)}>{busy === 'load' ? 'Loading...' : 'Load codes'}</button>
+        </div>
+      </div>
+      {codes.length > 0 && (
+        <div className="top10-code-grid">
+          {codes.map((codeRow) => (
+            <article className="top10-code-card" key={codeRow.id}>
+              <strong>{getProtectedPlayerName(codeRow)}</strong>
+              <span>{codeRow.status_label || 'Top 10'} · rank {codeRow.awarded_rank || '-'}</span>
+              <code>{codeRow.code}</code>
+              <button onClick={() => resetCode(codeRow)} disabled={busy === codeRow.id}>
+                {busy === codeRow.id ? 'Resetting...' : 'Reset code'}
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+      {!codes.length && <p className="muted">Load codes after the first finished match to see protected players.</p>}
+    </section>
+  );
 }
 
 function CloneGroupsPanel({
@@ -2453,6 +2679,24 @@ function formatManualSyncError(message) {
     return 'The football data provider is temporarily unavailable. Please try the sync again shortly.';
   }
   return value || 'Manual sync failed.';
+}
+
+async function runTop10Request(body, admin = false) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (admin) headers['x-admin-password'] = sessionStorage.getItem('admin-password') || ADMIN_PASSWORD;
+  const response = await fetch('/api/top10-status', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Top 10 request failed.');
+  return payload;
+}
+
+function getProtectedPlayerName(codeRow) {
+  const player = Array.isArray(codeRow?.players) ? codeRow.players[0] : codeRow?.players;
+  return player?.name || codeRow?.name || 'Protected player';
 }
 
 function formatPublicSource(source) {
