@@ -2734,7 +2734,7 @@ function HelpPage({ navigate, routeBase }) {
         <article className="panel help-card">
           <span className="help-step">1</span>
           <h2>Enter your name</h2>
-          <p>Start on the welcome page and choose the display name you want to use in this group.</p>
+          <p>Start on the welcome page and use your first and last name, so the leaderboard stays clear.</p>
         </article>
         <article className="panel help-card">
           <span className="help-step">2</span>
@@ -2760,9 +2760,9 @@ function HelpPage({ navigate, routeBase }) {
           <button onClick={() => goTo('/favorites')}>Favorites</button>
           <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
           <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
-          <p>Track points after matches finish. Your name appears once you submit a prediction.</p>
+          <p>Track points after matches finish. Your name appears once you submit a prediction, and Top 10 status starts only after you score points.</p>
           <button onClick={() => goTo('/top10-code')}>My code</button>
-          <p>Protected Top 10 players can view their private code for keeping their profile safe on a new browser or device.</p>
+          <p>Protected Top 10 players can view and copy their private code for keeping their profile safe on a new browser or device.</p>
         </div>
       </section>
 
@@ -2794,9 +2794,19 @@ function HelpPage({ navigate, routeBase }) {
               'The leaderboard only shows players who submitted at least one prediction. Submit your first pick and your name will appear.',
           },
           {
+            question: 'Why do I need first and last name?',
+            answer:
+              'Use your first and last name so players do not have the same name on the leaderboard. If you already used one name, the app may ask you to add your last name. Your saved picks stay with the same profile.',
+          },
+          {
             question: 'What is Top 10 protection?',
             answer:
-              'When you enter the current Top 10, you get a private code and a Top 10 badge. The badge appears while you are ranked 1 to 10. Your private code protects your profile, picks, leaderboard history, and earned Top 10 status if you use a new browser or device. If you later drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
+              'When you enter the current Top 10 with more than zero points, you get a celebration message, a private code, and a Top 10 badge. Copy or save your code. It protects your profile, picks, leaderboard history, and earned Top 10 status if you use a new browser or device.',
+          },
+          {
+            question: 'Why did my Top 10 badge disappear?',
+            answer:
+              'The Top 10 badge appears only while you are currently ranked 1 to 10. If you drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
           },
           {
             question: 'What is Match Insight?',
