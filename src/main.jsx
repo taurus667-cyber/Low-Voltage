@@ -269,6 +269,22 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
   const [top10Code, setTop10Code] = useState('');
 
   const savePlayer = async (mode = 'auto') => {
+    if (mode.startsWith('existing:')) {
+      const existingId = mode.replace('existing:', '');
+      const existing = players.find((item) => item.id === existingId && isPlayerActive(item));
+      if (existing && !validatePlayerFullName(existing.name).valid) {
+        setMessage('');
+        setError('');
+        setUpgradePlayer(existing);
+        setName(`${existing.name} `);
+        setMatches([]);
+        setProtectedClaim(null);
+        setTop10Code('');
+        setEntryError('Add your last name, then press Continue. This updates the same profile, so your picks stay saved.');
+        return;
+      }
+    }
+
     const nameValidation = validatePlayerFullName(name);
     const cleanName = nameValidation.name;
     setMessage('');
