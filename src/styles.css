@@ -68,7 +68,7 @@ textarea {
   z-index: 10;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.75rem;
   padding: 0.75rem clamp(1rem, 4vw, 2rem);
   border-bottom: 1px solid #d8e6e1;
@@ -82,6 +82,7 @@ textarea {
   padding: 0.5rem 0;
   color: #0f766e;
   font-size: 1rem;
+  margin-right: auto;
 }
 
 nav {
@@ -106,7 +107,15 @@ nav button.active,
 .help-link {
   min-height: 38px;
   padding: 0.5rem 0.75rem;
-  margin-left: auto;
+  font-size: 0.88rem;
+}
+
+.top10-badge {
+  min-height: 38px;
+  border-color: #c69b2c;
+  background: #f6c453;
+  color: #17201a;
+  box-shadow: 0 8px 18px rgba(198, 155, 44, 0.22);
   font-size: 0.88rem;
 }
 
@@ -138,6 +147,94 @@ main {
   border: 1px solid #f0b3aa;
   background: #fff0ee;
   color: #9b271d;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 29, 25, 0.48);
+}
+
+.top10-modal,
+.top10-code-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.top10-modal {
+  width: min(560px, 100%);
+  border: 1px solid #f0cf71;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #17201a;
+  box-shadow: 0 24px 80px rgba(10, 23, 19, 0.32);
+  padding: clamp(1.1rem, 4vw, 2rem);
+}
+
+.top10-modal h1 {
+  margin: 0;
+  font-size: clamp(2.1rem, 9vw, 4rem);
+}
+
+.top10-kicker {
+  margin: 0;
+  color: #8a6110;
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.top10-rank-pill {
+  width: fit-content;
+  border: 1px solid #d7a92f;
+  border-radius: 999px;
+  background: #f6c453;
+  color: #17201a;
+  padding: 0.4rem 0.75rem;
+  font-weight: 900;
+}
+
+.muted-pill {
+  border-color: #b8c8c2;
+  background: #eef4f2;
+  color: #405852;
+}
+
+.top10-player-line {
+  margin: 0;
+  color: #243a34;
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.top10-code-display {
+  border: 1px solid #d7a92f;
+  border-radius: 8px;
+  background: #17201a;
+  color: #f6c453;
+  padding: 1rem;
+  font-size: clamp(2.4rem, 12vw, 4.5rem);
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1;
+  text-align: center;
+}
+
+.top10-code-missing {
+  border-radius: 8px;
+  background: #fff2cc;
+  color: #62430d;
+  padding: 0.85rem;
+  font-weight: 800;
+}
+
+.top10-code-page {
+  display: grid;
+  gap: 1rem;
 }
 
 .hero {
@@ -1423,9 +1520,12 @@ th {
     flex-direction: column;
   }
 
-  .help-link {
+  .brand,
+  .help-link,
+  .top10-badge {
     width: 100%;
     margin-left: 0;
+    margin-right: 0;
   }
 
   nav {

@@ -63,3 +63,20 @@ export function calculateLeaderboard(players, matches, predictions) {
       a.name.localeCompare(b.name),
     );
 }
+
+export function getPlayerTop10Status(leaderboardRows = [], playerId) {
+  if (!playerId) return null;
+  const visibleRows = leaderboardRows.filter((row) => row.predictions_submitted_count > 0);
+  const index = visibleRows.findIndex((row) => row.player_id === playerId);
+  if (index < 0 || index > 9) return null;
+  const row = visibleRows[index];
+  return {
+    rank: index + 1,
+    player_id: row.player_id,
+    name: row.name,
+    total_points: row.total_points,
+    exact_score_count: row.exact_score_count,
+    correct_outcome_count: row.correct_outcome_count,
+    predictions_submitted_count: row.predictions_submitted_count,
+  };
+}

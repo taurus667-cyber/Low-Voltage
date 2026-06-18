@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
-import { calculateLeaderboard, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
+import { calculateLeaderboard, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
 import { getActiveTournament, getTournamentBySlug, scopedRows } from './lib/tournament.js';
 import {
@@ -48,6 +48,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [top10Celebration, setTop10Celebration] = useState(null);
+  const [top10Protection, setTop10Protection] = useState(null);
 
   const refresh = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -114,11 +116,23 @@ function App() {
   const scopedTeams = scopedRows(teams, activeTournament);
   const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
   const currentScopedPlayer = scopedPlayers.find((item) => item.id === player?.id) || null;
+  const leaderboardRows = useMemo(
+    () => calculateLeaderboard(scopedPlayers, scopedMatches, scopedPredictions),
+    [scopedPlayers, scopedMatches, scopedPredictions],
+  );
+  const currentTop10Status = useMemo(
+    () => getPlayerTop10Status(leaderboardRows, currentScopedPlayer?.id),
+    [leaderboardRows, currentScopedPlayer?.id],
+  );
 
   useEffect(() => {
-    if (!activeTournament?.id || !player?.id || !player?.player_token) return;
+    if (!activeTournament?.id || !player?.id || !player?.player_token) {
+      setTop10Protection(null);
+      return;
+    }
     let cancelled = false;
     const syncAndRevealTop10Code = async () => {
+      setTop10Protection(null);
       try {
         await runTop10Request({ action: 'sync', tournament_id: activeTournament.id });
         const payload = await runTop10Request({
@@ -128,7 +142,17 @@ function App() {
           player_token: player.player_token,
         });
         if (!cancelled && payload.protected && payload.firstReveal && payload.code) {
-          setMessage(`You are Top 10. Save this protection code: ${payload.code}. You will need it on a new browser or device.`);
+          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+          setTop10Celebration(createTop10Celebration({
+            player: currentScopedPlayer || player,
+            code: payload.code,
+            status: currentTop10Status,
+            firstReveal: true,
+          }));
+        } else if (!cancelled && payload.protected && payload.code) {
+          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+        } else if (!cancelled) {
+          setTop10Protection({ protected: false });
         }
       } catch {
         // The offline preview has no API server; production uses this for Top 10 protection.
@@ -138,7 +162,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTournament?.id, player?.id, player?.player_token]);
+  }, [
+    activeTournament?.id,
+    player?.id,
+    player?.player_token,
+    currentScopedPlayer?.id,
+    currentScopedPlayer?.name,
+    currentTop10Status?.rank,
+  ]);
 
   const toggleTeamFavorite = async (team) => {
     setMessage('');
@@ -197,6 +228,10 @@ function App() {
     matchLineups: scopedRows(matchLineups, activeTournament),
     predictionAids: scopedRows(predictionAids, activeTournament),
     matchOdds: scopedRows(matchOdds, activeTournament),
+    currentTop10Status,
+    top10Protection,
+    setTop10Protection,
+    setTop10Celebration,
     refresh,
     loading,
     message,
@@ -215,6 +250,24 @@ function App() {
         <button className={`help-link ${pageRoute === '/help' ? 'active' : ''}`} onClick={() => navigate(buildRoute(routeBase, '/help'))}>
           Help
         </button>
+        {top10Protection?.protected && (
+          <button className={pageRoute === '/top10-code' ? 'help-link active' : 'help-link'} onClick={() => navigate(buildRoute(routeBase, '/top10-code'))}>
+            My code
+          </button>
+        )}
+        {currentTop10Status && (
+          <button
+            className="top10-badge"
+            onClick={() => setTop10Celebration(createTop10Celebration({
+              player: currentScopedPlayer,
+              code: top10Protection?.code,
+              status: currentTop10Status,
+              firstReveal: false,
+            }))}
+          >
+            Top 10 #{currentTop10Status.rank}
+          </button>
+        )}
         <nav aria-label="Primary navigation">
           <button className={pageRoute === '/matches' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/matches'))}>
             Matches
@@ -253,14 +306,35 @@ function App() {
         {pageRoute === '/favorites' && <FavoritesPage {...pageProps} />}
         {pageRoute.startsWith('/nations/') && <NationPage {...pageProps} route={pageRoute} />}
         {pageRoute === '/leaderboard' && <LeaderboardPage {...pageProps} />}
+        {pageRoute === '/top10-code' && <Top10CodePage {...pageProps} storedPlayer={player} />}
         {pageRoute === '/admin' && <AdminPage {...pageProps} />}
         {pageRoute === '/help' && <HelpPage {...pageProps} />}
       </main>
+      {top10Celebration && (
+        <Top10CelebrationModal
+          celebration={top10Celebration}
+          onClose={() => setTop10Celebration(null)}
+        />
+      )}
     </div>
   );
 }
 
-function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage, setError, navigate, tournament, routeBase }) {
+function HomePage({
+  player,
+  setPlayer,
+  setPlayers,
+  players,
+  refresh,
+  setMessage,
+  setError,
+  navigate,
+  tournament,
+  routeBase,
+  currentTop10Status,
+  setTop10Protection,
+  setTop10Celebration,
+}) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
   const [entryError, setEntryError] = useState('');
@@ -346,11 +420,17 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
         setProtectedClaim(null);
         setTop10Code('');
         await refresh();
-        setMessage(
-          payload.protectionCode
-            ? `Updated your profile to ${data.name}. Save your Top 10 protection code: ${payload.protectionCode}. You will need it on a new browser or device.`
-            : `Updated your profile to ${data.name}. Your picks are still saved.`,
-        );
+        if (payload.protectionCode) {
+          setTop10Protection({ protected: true, code: payload.protectionCode, statusLabel: 'Top 10' });
+          setTop10Celebration(createTop10Celebration({
+            player: data,
+            code: payload.protectionCode,
+            status: currentTop10Status,
+            firstReveal: true,
+          }));
+        } else {
+          setMessage(`Updated your profile to ${data.name}. Your picks are still saved.`);
+        }
         navigate(buildRoute(routeBase, '/matches'));
         return;
       }
@@ -1311,6 +1391,118 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
         </table>
       </div>
       {!visibleRows.length && <EmptyState text="Leaderboard will appear after the first prediction is submitted." />}
+    </section>
+  );
+}
+
+function Top10CelebrationModal({ celebration, onClose }) {
+  const rankText = celebration.rank ? `Current rank: #${celebration.rank}` : 'Protected Top 10 status';
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="top10-modal" role="dialog" aria-modal="true" aria-labelledby="top10-title">
+        <p className="top10-kicker">Top 10 protected list</p>
+        <h1 id="top10-title">You made the Top 10</h1>
+        <div className="top10-rank-pill">{rankText}</div>
+        <p className="top10-player-line">
+          {celebration.playerName}, you are now on the protected Top 10 list.
+        </p>
+        {celebration.code ? (
+          <div className="top10-code-display" aria-label="Top 10 protection code">
+            {celebration.code}
+          </div>
+        ) : (
+          <p className="top10-code-missing">Open My code from this browser to view your private protection code.</p>
+        )}
+        <p>
+          This code protects your profile so nobody on another browser can claim your name, picks, and Top 10 status.
+        </p>
+        <p className="muted">Your picks and leaderboard history stay with this same profile.</p>
+        <button className="primary" onClick={onClose}>I saved my code</button>
+      </section>
+    </div>
+  );
+}
+
+function Top10CodePage({
+  player,
+  storedPlayer,
+  tournament,
+  currentTop10Status,
+  top10Protection,
+  setTop10Protection,
+  setTop10Celebration,
+  navigate,
+  routeBase,
+}) {
+  const [loadingCode, setLoadingCode] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const code = top10Protection?.code || '';
+
+  useEffect(() => {
+    if (!tournament?.id || !storedPlayer?.id || !storedPlayer?.player_token || code) return;
+    let cancelled = false;
+    const loadCode = async () => {
+      setLoadingCode(true);
+      setCodeError('');
+      try {
+        const payload = await runTop10Request({
+          action: 'reveal',
+          tournament_id: tournament.id,
+          player_id: storedPlayer.id,
+          player_token: storedPlayer.player_token,
+        });
+        if (cancelled) return;
+        if (payload.protected && payload.code) {
+          setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+        } else {
+          setTop10Protection({ protected: false });
+        }
+      } catch (err) {
+        if (!cancelled) setCodeError(err.message || 'Could not load your Top 10 code.');
+      } finally {
+        if (!cancelled) setLoadingCode(false);
+      }
+    };
+    loadCode();
+    return () => {
+      cancelled = true;
+    };
+  }, [tournament?.id, storedPlayer?.id, storedPlayer?.player_token, code, setTop10Protection]);
+
+  if (!player && !storedPlayer) return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
+
+  const displayPlayer = player || storedPlayer;
+  const openCelebration = () => {
+    setTop10Celebration(createTop10Celebration({
+      player: displayPlayer,
+      code,
+      status: currentTop10Status,
+      firstReveal: false,
+    }));
+  };
+
+  return (
+    <section className="top10-code-page">
+      <PageTitle title="My code" />
+      <div className="panel top10-code-panel">
+        <p className="top10-kicker">Private Top 10 protection</p>
+        <h2>{displayPlayer?.name || 'Your profile'}</h2>
+        {currentTop10Status ? (
+          <div className="top10-rank-pill">Current rank: #{currentTop10Status.rank}</div>
+        ) : (
+          <div className="top10-rank-pill muted-pill">Protected status saved</div>
+        )}
+        <p>
+          Your code protects your profile, picks, leaderboard history, and earned Top 10 status when someone tries to use this profile from another browser or device.
+        </p>
+        {loadingCode && <p className="muted">Loading your private code...</p>}
+        {code && <div className="top10-code-display">{code}</div>}
+        {!loadingCode && !code && !codeError && (
+          <p className="muted">No protected Top 10 code is available for this saved browser yet.</p>
+        )}
+        {codeError && <p className="entry-error">{codeError}</p>}
+        {code && <button className="primary" onClick={openCelebration}>Open Top 10 status</button>}
+      </div>
     </section>
   );
 }
@@ -2514,6 +2706,8 @@ function HelpPage({ navigate, routeBase }) {
           <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
           <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
           <p>Track points after matches finish. Your name appears once you submit a prediction.</p>
+          <button onClick={() => goTo('/top10-code')}>My code</button>
+          <p>Protected Top 10 players can view their private code for keeping their profile safe on a new browser or device.</p>
         </div>
       </section>
 
@@ -2543,6 +2737,11 @@ function HelpPage({ navigate, routeBase }) {
             question: 'Why is my name missing from the leaderboard?',
             answer:
               'The leaderboard only shows players who submitted at least one prediction. Submit your first pick and your name will appear.',
+          },
+          {
+            question: 'What is Top 10 protection?',
+            answer:
+              'When you enter the current Top 10, you get a private code and a Top 10 badge. The badge appears while you are ranked 1 to 10. Your private code protects your profile, picks, leaderboard history, and earned Top 10 status if you use a new browser or device. If you later drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
           },
           {
             question: 'What is Match Insight?',
@@ -2634,7 +2833,7 @@ function normalizeRoute(value) {
 
 function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
-  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/admin', '/help'].includes(path) ? path : '/';
+  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
 }
 
 function getRouteGroupSlug(route) {
@@ -2744,6 +2943,15 @@ async function runTop10Request(body, admin = false) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'Top 10 request failed.');
   return payload;
+}
+
+function createTop10Celebration({ player, code, status, firstReveal = false }) {
+  return {
+    playerName: player?.name || status?.name || 'Player',
+    code: code || '',
+    rank: status?.rank || null,
+    firstReveal,
+  };
 }
 
 function getProtectedPlayerName(codeRow) {
