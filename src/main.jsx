@@ -267,6 +267,8 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
   const [upgradePlayer, setUpgradePlayer] = useState(null);
   const [protectedClaim, setProtectedClaim] = useState(null);
   const [top10Code, setTop10Code] = useState('');
+  const upgradeNameValidation = upgradePlayer ? validatePlayerFullName(name) : null;
+  const upgradeTargetName = upgradeNameValidation?.valid ? upgradeNameValidation.name : 'Add first and last name';
 
   const savePlayer = async (mode = 'auto') => {
     if (mode.startsWith('existing:')) {
@@ -461,8 +463,20 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
           placeholder="First Last"
           maxLength={40}
         />
+        {upgradePlayer && (
+          <div className="name-update-confirm" aria-live="polite">
+            <strong>Updating existing profile</strong>
+            <span>
+              Current name: <b>{upgradePlayer.name}</b>
+            </span>
+            <span>
+              New name: <b>{upgradeTargetName}</b>
+            </span>
+            <small>Your saved picks stay with this same profile.</small>
+          </div>
+        )}
         <button className="primary" onClick={() => savePlayer()}>
-          Continue
+          {upgradePlayer && upgradeNameValidation?.valid ? `Update ${upgradePlayer.name} to ${upgradeTargetName}` : 'Continue'}
         </button>
         {entryError && <p className="entry-error" role="alert">{entryError}</p>}
         {protectedClaim && (

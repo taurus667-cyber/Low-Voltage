@@ -204,6 +204,25 @@ h2 {
   padding: 0.85rem;
 }
 
+.name-update-confirm {
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid #b8d8cf;
+  border-radius: 8px;
+  background: #eef8f5;
+  color: #10201c;
+  padding: 0.85rem;
+}
+
+.name-update-confirm span,
+.name-update-confirm small {
+  color: #405852;
+}
+
+.name-update-confirm b {
+  color: #10201c;
+}
+
 .entry-error {
   margin: -0.25rem 0 0;
   border-left: 3px solid #c73a2c;
