@@ -7,6 +7,7 @@ import {
   normalizeTeamName,
   numberOrNull,
 } from './api-football.js';
+import { refreshLinkedClonesForSource } from './clone-groups.js';
 import { syncTop10Codes } from './top10-core.js';
 
 const ACTIVE_BEFORE_MINUTES = 30;
@@ -19,7 +20,8 @@ export default async function handler(request, response) {
   if (!isAuthorized(request)) return response.status(401).json({ error: 'Unauthorized' });
 
   try {
-    return response.status(200).json(await runLiveScoreSync());
+    const result = await runLiveScoreSync();
+    return response.status(200).json(result);
   } catch (error) {
     return response.status(500).json({ error: error.message || 'Live score sync failed.' });
   }
@@ -70,6 +72,12 @@ export async function runLiveScoreSync() {
   } catch (error) {
     top10 = { created: 0, warning: error.message || 'Top 10 protection sync skipped.' };
   }
+  let clones = { refreshed: 0 };
+  try {
+    clones = await refreshLinkedClonesForSource(supabase, tournament);
+  } catch (error) {
+    clones = { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
+  }
 
   return {
     tournament: tournament.slug,
@@ -80,6 +88,7 @@ export async function runLiveScoreSync() {
     statistics: statisticRows.length,
     lineups: lineupRows.length,
     top10,
+    clones,
   };
 }
 

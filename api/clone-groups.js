@@ -116,6 +116,22 @@ export async function refreshCloneGroup(supabase, cloneTournamentId) {
   return { action: 'refresh', clone, source, copy };
 }
 
+export async function refreshLinkedClonesForSource(supabase, source) {
+  if (!source?.id) return { refreshed: 0 };
+  const { data: clones, error } = await supabase
+    .from('tournaments')
+    .select('id,name')
+    .eq('is_clone', true)
+    .eq('source_tournament_id', source.id);
+  if (error) throw error;
+  const refreshed = [];
+  for (const clone of clones || []) {
+    const result = await refreshCloneGroup(supabase, clone.id);
+    refreshed.push({ id: clone.id, name: clone.name, matches: result.copy.matches || 0 });
+  }
+  return { source: source.slug, refreshed: refreshed.length, groups: refreshed };
+}
+
 async function fetchSourceTournament(supabase, id) {
   const { data, error } = await supabase
     .from('tournaments')

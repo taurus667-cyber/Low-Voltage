@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCloneGroup, refreshCloneGroup } from './clone-groups.js';
+import { createCloneGroup, refreshCloneGroup, refreshLinkedClonesForSource } from './clone-groups.js';
 
 test('clone creation copies source football data without player data', async () => {
   const supabase = createMemorySupabase();
@@ -45,6 +45,39 @@ test('clone refresh preserves clone players and predictions', async () => {
   assert.equal(refreshedCloneMatch.team_a_score, 2);
   assert.equal(supabase.tables.players.some((row) => row.id === 'clone-player'), true);
   assert.equal(supabase.tables.predictions.some((row) => row.id === 'clone-pick'), true);
+});
+
+test('linked clone refresh copies live match-center data from source', async () => {
+  const supabase = createMemorySupabase();
+  const created = await createCloneGroup(supabase, {
+    name: 'Family Group',
+    slug: 'family-group',
+    source_tournament_id: 'source-1',
+  });
+  const sourceMatch = supabase.tables.matches.find((row) => row.id === 'match-1');
+  sourceMatch.status = 'live';
+  sourceMatch.live_team_a_score = 1;
+  sourceMatch.live_team_b_score = 0;
+  sourceMatch.live_minute = 38;
+  supabase.tables.match_statistics.push({
+    id: 'stat-1',
+    tournament_id: 'source-1',
+    match_id: 'match-1',
+    provider: 'API-Football',
+    team_name: 'Mexico',
+    statistics: { Possession: '54%' },
+  });
+
+  const result = await refreshLinkedClonesForSource(supabase, supabase.tables.tournaments[0]);
+  const cloneMatch = supabase.tables.matches.find((row) => row.tournament_id === created.clone.id);
+  const cloneStats = supabase.tables.match_statistics.filter((row) => row.tournament_id === created.clone.id);
+
+  assert.equal(result.refreshed, 1);
+  assert.equal(cloneMatch.status, 'live');
+  assert.equal(cloneMatch.live_team_a_score, 1);
+  assert.equal(cloneMatch.live_minute, 38);
+  assert.equal(cloneStats.length, 1);
+  assert.equal(cloneStats[0].match_id, cloneMatch.id);
 });
 
 function createMemorySupabase() {
