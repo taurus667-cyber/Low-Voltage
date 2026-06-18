@@ -455,10 +455,9 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
           onChange={(event) => {
             setName(event.target.value);
             setMatches([]);
-            setUpgradePlayer(null);
             setProtectedClaim(null);
             setTop10Code('');
-            setEntryError('');
+            setEntryError(upgradePlayer ? 'Add your last name, then press Continue. This updates the same profile, so your picks stay saved.' : '');
           }}
           placeholder="First Last"
           maxLength={40}
@@ -492,7 +491,7 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
             <button onClick={() => savePlayer(`existing:${protectedClaim.player.id}`)}>Unlock {protectedClaim.player.name}</button>
           </div>
         )}
-        {player && (
+        {player && !upgradePlayer && (
           <button className="ghost" onClick={continueAsStoredPlayer}>
             Continue as {player.name}
           </button>
