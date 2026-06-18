@@ -35,15 +35,21 @@ export default async function handler(request, response) {
     }
 
     if (body.action === 'rename') {
-      const codeRow = await getCodeRow(supabase, tournament.id, body.player_id);
-      if (codeRow) {
-        const player = await getPlayer(supabase, body.player_id);
-        const tokenMatches = player?.player_token && player.player_token === body.player_token;
-        const codeMatches = normalizeCode(body.code) === codeRow.code;
-        if (!tokenMatches && !codeMatches) return response.status(403).json({ error: 'Top 10 code is required to update this protected profile.' });
-      }
       const cleanName = String(body.name || '').trim().replace(/\s+/g, ' ');
       if (!cleanName) return response.status(400).json({ error: 'Player name is required.' });
+      const codeRow = await getCodeRow(supabase, tournament.id, body.player_id);
+      let renameAuth = { allowed: true, revealCode: false };
+      if (codeRow) {
+        const player = await getPlayer(supabase, body.player_id);
+        renameAuth = getProtectedRenameAuthorization({
+          player,
+          codeRow,
+          playerToken: body.player_token,
+          code: body.code,
+          cleanName,
+        });
+        if (!renameAuth.allowed) return response.status(403).json({ error: 'Top 10 code is required to update this protected profile.' });
+      }
       const { data, error } = await supabase
         .from('players')
         .update({ name: cleanName })
@@ -51,6 +57,11 @@ export default async function handler(request, response) {
         .select()
         .single();
       if (error) throw error;
+      if (renameAuth.revealCode) {
+        const { error: showError } = await supabase.from('top10_player_codes').update({ shown_at: new Date().toISOString() }).eq('id', codeRow.id);
+        if (showError) throw showError;
+        return response.status(200).json({ player: data, protectionCode: codeRow.code, firstReveal: true });
+      }
       return response.status(200).json({ player: data });
     }
 
@@ -127,6 +138,29 @@ async function getPlayer(supabase, playerId) {
 
 function normalizeCode(value) {
   return String(value || '').trim().toUpperCase();
+}
+
+export function getProtectedRenameAuthorization({ player, codeRow, playerToken, code, cleanName }) {
+  if (!codeRow) return { allowed: true, revealCode: false };
+  const tokenMatches = Boolean(player?.player_token && player.player_token === playerToken);
+  const codeMatches = normalizeCode(code) === codeRow.code;
+  const firstSingleNameUpgrade = !tokenMatches &&
+    !codeMatches &&
+    !codeRow.shown_at &&
+    isIncompleteProfileName(player?.name) &&
+    hasFullName(cleanName);
+  return {
+    allowed: tokenMatches || codeMatches || firstSingleNameUpgrade,
+    revealCode: firstSingleNameUpgrade,
+  };
+}
+
+function hasFullName(value) {
+  return String(value || '').trim().split(/\s+/).filter(Boolean).length >= 2;
+}
+
+function isIncompleteProfileName(value) {
+  return !hasFullName(value);
 }
 
 function isMissingOptionalRelation(error) {

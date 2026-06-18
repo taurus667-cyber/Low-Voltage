@@ -343,9 +343,14 @@ function HomePage({ player, setPlayer, setPlayers, players, refresh, setMessage,
         setPlayer(data);
         setPlayers((current) => current.map((item) => (item.id === data.id ? { ...item, ...data, player_token: undefined } : item)));
         setUpgradePlayer(null);
+        setProtectedClaim(null);
         setTop10Code('');
         await refresh();
-        setMessage(`Updated your profile to ${data.name}. Your picks are still saved.`);
+        setMessage(
+          payload.protectionCode
+            ? `Updated your profile to ${data.name}. Save your Top 10 protection code: ${payload.protectionCode}. You will need it on a new browser or device.`
+            : `Updated your profile to ${data.name}. Your picks are still saved.`,
+        );
         navigate(buildRoute(routeBase, '/matches'));
         return;
       }
