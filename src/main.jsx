@@ -124,6 +124,40 @@ function App() {
     () => getPlayerTop10Status(leaderboardRows, currentScopedPlayer?.id),
     [leaderboardRows, currentScopedPlayer?.id],
   );
+  const loadTop10Protection = useCallback(async () => {
+    if (!activeTournament?.id || !player?.id || !player?.player_token) return null;
+    const payload = await runTop10Request({
+      action: 'reveal',
+      tournament_id: activeTournament.id,
+      player_id: player.id,
+      player_token: player.player_token,
+    });
+    if (payload.protected && payload.code) {
+      const protection = { protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' };
+      setTop10Protection(protection);
+      return { ...payload, ...protection };
+    }
+    const protection = { protected: false };
+    setTop10Protection(protection);
+    return { ...payload, ...protection };
+  }, [activeTournament?.id, player?.id, player?.player_token]);
+  const openTop10Celebration = useCallback(async () => {
+    try {
+      const protection = top10Protection?.code ? top10Protection : await loadTop10Protection();
+      if (!protection?.code) {
+        navigate(buildRoute(routeBase, '/top10-code'));
+        return;
+      }
+      setTop10Celebration(createTop10Celebration({
+        player: currentScopedPlayer || player,
+        code: protection.code,
+        status: currentTop10Status,
+        firstReveal: false,
+      }));
+    } catch (err) {
+      setError(err.message || 'Could not load your Top 10 code.');
+    }
+  }, [top10Protection, loadTop10Protection, currentScopedPlayer, player, currentTop10Status, routeBase]);
 
   useEffect(() => {
     if (!activeTournament?.id || !player?.id || !player?.player_token) {
@@ -135,12 +169,7 @@ function App() {
       setTop10Protection(null);
       try {
         await runTop10Request({ action: 'sync', tournament_id: activeTournament.id });
-        const payload = await runTop10Request({
-          action: 'reveal',
-          tournament_id: activeTournament.id,
-          player_id: player.id,
-          player_token: player.player_token,
-        });
+        const payload = await loadTop10Protection();
         if (!cancelled && payload.protected && payload.firstReveal && payload.code) {
           setTop10Protection({ protected: true, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
           setTop10Celebration(createTop10Celebration({
@@ -162,14 +191,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [
-    activeTournament?.id,
-    player?.id,
-    player?.player_token,
-    currentScopedPlayer?.id,
-    currentScopedPlayer?.name,
-    currentTop10Status?.rank,
-  ]);
+  }, [activeTournament?.id, player?.id, player?.player_token, currentScopedPlayer?.id, currentScopedPlayer?.name, currentTop10Status?.rank, loadTop10Protection]);
 
   const toggleTeamFavorite = async (team) => {
     setMessage('');
@@ -232,6 +254,7 @@ function App() {
     top10Protection,
     setTop10Protection,
     setTop10Celebration,
+    openTop10Celebration,
     refresh,
     loading,
     message,
@@ -258,12 +281,7 @@ function App() {
         {currentTop10Status && (
           <button
             className="top10-badge"
-            onClick={() => setTop10Celebration(createTop10Celebration({
-              player: currentScopedPlayer,
-              code: top10Protection?.code,
-              status: currentTop10Status,
-              firstReveal: false,
-            }))}
+            onClick={openTop10Celebration}
           >
             Top 10 #{currentTop10Status.rank}
           </button>
@@ -1396,7 +1414,17 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
 }
 
 function Top10CelebrationModal({ celebration, onClose }) {
+  const [copied, setCopied] = useState(false);
   const rankText = celebration.rank ? `Current rank: #${celebration.rank}` : 'Protected Top 10 status';
+  const copyCode = async () => {
+    if (!celebration.code) return;
+    try {
+      await navigator.clipboard.writeText(celebration.code);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="top10-modal" role="dialog" aria-modal="true" aria-labelledby="top10-title">
@@ -1406,12 +1434,13 @@ function Top10CelebrationModal({ celebration, onClose }) {
         <p className="top10-player-line">
           {celebration.playerName}, you are now on the protected Top 10 list.
         </p>
-        {celebration.code ? (
-          <div className="top10-code-display" aria-label="Top 10 protection code">
-            {celebration.code}
+        {celebration.code && (
+          <div className="top10-code-actions">
+            <div className="top10-code-display" aria-label="Top 10 protection code">
+              {celebration.code}
+            </div>
+            <button onClick={copyCode}>{copied ? 'Copied' : 'Copy code'}</button>
           </div>
-        ) : (
-          <p className="top10-code-missing">Open My code from this browser to view your private protection code.</p>
         )}
         <p>
           This code protects your profile so nobody on another browser can claim your name, picks, and Top 10 status.

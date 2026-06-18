@@ -224,12 +224,15 @@ main {
   text-align: center;
 }
 
-.top10-code-missing {
-  border-radius: 8px;
-  background: #fff2cc;
-  color: #62430d;
-  padding: 0.85rem;
-  font-weight: 800;
+.top10-code-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.top10-code-actions button {
+  min-width: 120px;
 }
 
 .top10-code-page {
@@ -1536,6 +1539,10 @@ th {
   nav button {
     padding-inline: 0.35rem;
     font-size: 0.86rem;
+  }
+
+  .top10-code-actions {
+    grid-template-columns: 1fr;
   }
 
   .hero,
