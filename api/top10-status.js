@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { getRequiredSupabaseEnv, isAdminAuthorized } from './api-football.js';
-import { generateTop10Code, syncTop10Codes } from './top10-core.js';
+import { generateTop10Code, getTop10SetupMessage, isMissingTop10Table, syncTop10Codes } from './top10-core.js';
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed.' });
@@ -84,6 +84,9 @@ export default async function handler(request, response) {
         .select('*, players(name)')
         .eq('tournament_id', tournament.id)
         .order('created_at');
+      if (isMissingTop10Table(error)) {
+        return response.status(200).json({ codes: [], setupRequired: true, warning: getTop10SetupMessage() });
+      }
       if (error) throw error;
       return response.status(200).json({ codes: data || [] });
     }
@@ -103,6 +106,9 @@ export default async function handler(request, response) {
 
     return response.status(400).json({ error: 'Unknown Top 10 action.' });
   } catch (error) {
+    if (isMissingTop10Table(error)) {
+      return response.status(200).json({ setupRequired: true, warning: getTop10SetupMessage() });
+    }
     return response.status(500).json({ error: error.message || 'Top 10 status failed.' });
   }
 }
@@ -164,10 +170,7 @@ function isIncompleteProfileName(value) {
 }
 
 function isMissingOptionalRelation(error) {
-  if (!error) return false;
-  return error.code === 'PGRST205' ||
-    error.code === '42P01' ||
-    /could not find the table|schema cache|does not exist|relation .*top10_player_codes/i.test(error.message || '');
+  return isMissingTop10Table(error);
 }
 
 async function getRequestBody(request) {

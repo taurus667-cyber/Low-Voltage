@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateTop10Code, getTop10Entrants, syncTop10Codes } from './top10-core.js';
+import { generateTop10Code, getTop10Entrants, getTop10SetupMessage, syncTop10Codes } from './top10-core.js';
 
 test('generates four uppercase alphanumeric code characters', () => {
   const code = generateTop10Code(() => 0);
@@ -70,7 +70,16 @@ test('sync creates codes only for newly protected top 10 entrants', async () => 
   assert.equal(new Set(supabase.tables.top10_player_codes.map((row) => row.player_id)).size, 10);
 });
 
-function createMemorySupabase() {
+test('sync reports setup required when top 10 table is missing', async () => {
+  const supabase = createMemorySupabase({ missingTop10Table: true });
+  const result = await syncTop10Codes(supabase, 'tournament-1');
+
+  assert.equal(result.created, 0);
+  assert.equal(result.setupRequired, true);
+  assert.equal(result.warning, getTop10SetupMessage());
+});
+
+function createMemorySupabase(options = {}) {
   const players = Array.from({ length: 11 }, (_, index) => ({
     id: `player-${index + 1}`,
     tournament_id: 'tournament-1',
@@ -103,16 +112,17 @@ function createMemorySupabase() {
   return {
     tables,
     from(table) {
-      return new MemoryQuery(tables, table, () => `generated-${id++}`);
+      return new MemoryQuery(tables, table, () => `generated-${id++}`, options);
     },
   };
 }
 
 class MemoryQuery {
-  constructor(tables, table, nextId) {
+  constructor(tables, table, nextId, options = {}) {
     this.tables = tables;
     this.table = table;
     this.nextId = nextId;
+    this.options = options;
     this.filters = [];
   }
 
@@ -132,6 +142,10 @@ class MemoryQuery {
   }
 
   then(resolve) {
+    if (this.options.missingTop10Table && this.table === 'top10_player_codes') {
+      resolve({ data: null, error: { code: 'PGRST205', message: "Could not find the table 'public.top10_player_codes' in the schema cache" } });
+      return;
+    }
     resolve({ data: this.applyFilters(), error: null });
   }
 

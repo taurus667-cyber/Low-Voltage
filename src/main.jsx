@@ -2436,18 +2436,21 @@ function AdminLockButton({ match, quickUpdate }) {
 function Top10CodesPanel({ tournament, setMessage, setError }) {
   const [codes, setCodes] = useState([]);
   const [busy, setBusy] = useState('');
+  const [setupWarning, setSetupWarning] = useState('');
 
   const loadCodes = async () => {
     if (!tournament?.id) return;
     setBusy('load');
     setMessage('');
     setError('');
+    setSetupWarning('');
     try {
       const payload = await runTop10Request({
         action: 'admin-list',
         tournament_id: tournament.id,
       }, true);
       setCodes(payload.codes || []);
+      if (payload.setupRequired) setSetupWarning(payload.warning || getTop10SetupMessage());
     } catch (err) {
       setError(err.message || 'Could not load Top 10 codes.');
     } finally {
@@ -2460,11 +2463,17 @@ function Top10CodesPanel({ tournament, setMessage, setError }) {
     setBusy('sync');
     setMessage('');
     setError('');
+    setSetupWarning('');
     try {
       const payload = await runTop10Request({
         action: 'sync',
         tournament_id: tournament.id,
       });
+      if (payload.setupRequired) {
+        setSetupWarning(payload.warning || getTop10SetupMessage());
+        setCodes([]);
+        return;
+      }
       setMessage(`Top 10 status synced. New protected players: ${payload.created || 0}.`);
       await loadCodes();
     } catch (err) {
@@ -2478,6 +2487,7 @@ function Top10CodesPanel({ tournament, setMessage, setError }) {
     setBusy(codeRow.id);
     setMessage('');
     setError('');
+    setSetupWarning('');
     try {
       const payload = await runTop10Request({
         action: 'admin-reset',
@@ -2505,6 +2515,7 @@ function Top10CodesPanel({ tournament, setMessage, setError }) {
           <button onClick={loadCodes} disabled={Boolean(busy)}>{busy === 'load' ? 'Loading...' : 'Load codes'}</button>
         </div>
       </div>
+      {setupWarning && <p className="entry-error">{setupWarning}</p>}
       {codes.length > 0 && (
         <div className="top10-code-grid">
           {codes.map((codeRow) => (
@@ -3017,6 +3028,10 @@ function createTop10Celebration({ player, code, status, firstReveal = false }) {
 function getProtectedPlayerName(codeRow) {
   const player = Array.isArray(codeRow?.players) ? codeRow.players[0] : codeRow?.players;
   return player?.name || codeRow?.name || 'Protected player';
+}
+
+function getTop10SetupMessage() {
+  return 'Top 10 protection is not set up for this app database yet. Run the top10_player_codes Supabase migration for this project, then click Sync Top 10 again.';
 }
 
 function formatPublicSource(source) {

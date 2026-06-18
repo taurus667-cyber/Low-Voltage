@@ -42,6 +42,15 @@ export async function syncTop10Codes(supabase, tournamentId) {
   throwIfError(playersResult.error);
   throwIfError(matchesResult.error);
   throwIfError(predictionsResult.error);
+  if (isMissingTop10Table(codesResult.error)) {
+    return {
+      created: 0,
+      protectedCount: 0,
+      entrants: [],
+      setupRequired: true,
+      warning: getTop10SetupMessage(),
+    };
+  }
   throwIfError(codesResult.error);
 
   const existingPlayerIds = new Set((codesResult.data || []).map((row) => row.player_id));
@@ -62,6 +71,17 @@ export async function syncTop10Codes(supabase, tournamentId) {
   const { error } = await supabase.from('top10_player_codes').insert(newRows);
   throwIfError(error);
   return { created: newRows.length, protectedCount: existingPlayerIds.size + newRows.length, entrants };
+}
+
+export function isMissingTop10Table(error) {
+  if (!error) return false;
+  return error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    /could not find the table|schema cache|does not exist|relation .*top10_player_codes/i.test(error.message || '');
+}
+
+export function getTop10SetupMessage() {
+  return 'Top 10 protection is not set up for this app database yet. Run the top10_player_codes Supabase migration for this project, then click Sync Top 10 again.';
 }
 
 function generateUniqueCode(existingRows, playerId) {
