@@ -66,7 +66,7 @@ export function calculateLeaderboard(players, matches, predictions) {
 
 export function getPlayerTop10Status(leaderboardRows = [], playerId) {
   if (!playerId) return null;
-  const visibleRows = leaderboardRows.filter((row) => row.predictions_submitted_count > 0);
+  const visibleRows = leaderboardRows.filter((row) => row.predictions_submitted_count > 0 && row.total_points > 0);
   const index = visibleRows.findIndex((row) => row.player_id === playerId);
   if (index < 0 || index > 9) return null;
   const row = visibleRows[index];

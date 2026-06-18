@@ -26,7 +26,7 @@ export function getTop10Entrants(players = [], matches = [], predictions = []) {
   const finishedIds = new Set(finishedMatches.map((match) => match.id));
   const eligiblePredictions = predictions.filter((prediction) => finishedIds.has(prediction.match_id));
   const rows = calculateLeaderboard(players, finishedMatches, eligiblePredictions)
-    .filter((row) => row.predictions_submitted_count > 0)
+    .filter((row) => row.predictions_submitted_count > 0 && row.total_points > 0)
     .slice(0, 10)
     .map((row, index) => ({ ...row, rank: index + 1 }));
   return { entrants: rows, latestMatch: getLatestFinishedMatch(finishedMatches) };

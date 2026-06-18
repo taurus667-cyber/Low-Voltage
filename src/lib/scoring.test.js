@@ -48,3 +48,16 @@ test('does not return Top 10 badge data before a player submits picks', () => {
 
   assert.equal(getPlayerTop10Status(rows, 'player-1'), null);
 });
+
+test('does not return Top 10 badge data for zero-point players', () => {
+  const rows = [{
+    player_id: 'player-1',
+    name: 'Player 1',
+    total_points: 0,
+    exact_score_count: 0,
+    correct_outcome_count: 0,
+    predictions_submitted_count: 4,
+  }];
+
+  assert.equal(getPlayerTop10Status(rows, 'player-1'), null);
+});

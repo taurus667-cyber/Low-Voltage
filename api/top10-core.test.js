@@ -33,6 +33,32 @@ test('selects top 10 from finished matches only', () => {
   assert.equal(result.entrants.some((row) => row.player_id === 'player-12'), false);
 });
 
+test('does not select zero-point players for top 10 protection', () => {
+  const players = [{
+    id: 'player-1',
+    name: 'Zero Points',
+    is_active: true,
+  }];
+  const matches = [{
+    id: 'finished',
+    status: 'finished',
+    kickoff_time: '2026-06-11T20:00:00Z',
+    team_a_score: 1,
+    team_b_score: 0,
+  }];
+  const predictions = [{
+    id: 'prediction-player-1',
+    player_id: 'player-1',
+    match_id: 'finished',
+    predicted_team_a_score: 0,
+    predicted_team_b_score: 1,
+    submitted_at: '2026-06-11T19:00:00Z',
+  }];
+
+  const result = getTop10Entrants(players, matches, predictions);
+  assert.equal(result.entrants.length, 0);
+});
+
 test('sync creates codes only for newly protected top 10 entrants', async () => {
   const supabase = createMemorySupabase();
   const first = await syncTop10Codes(supabase, 'tournament-1');
