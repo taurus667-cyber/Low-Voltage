@@ -1,11 +1,13 @@
+const viteEnv = import.meta.env || {};
+
 export const FALLBACK_TOURNAMENT = {
   id: null,
-  slug: import.meta.env.VITE_TOURNAMENT_SLUG || 'world-cup-2026',
-  name: import.meta.env.VITE_TOURNAMENT_NAME || 'FIFA World Cup 2026',
-  branding_text: import.meta.env.VITE_TOURNAMENT_BRANDING || 'Private friends group',
-  api_football_league_id: import.meta.env.VITE_API_FOOTBALL_LEAGUE_ID || '1',
-  api_football_season: import.meta.env.VITE_API_FOOTBALL_SEASON || '2026',
-  timezone: import.meta.env.VITE_TOURNAMENT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
+  slug: viteEnv.VITE_TOURNAMENT_SLUG || 'world-cup-2026',
+  name: viteEnv.VITE_TOURNAMENT_NAME || 'FIFA World Cup 2026',
+  branding_text: viteEnv.VITE_TOURNAMENT_BRANDING || 'Private friends group',
+  api_football_league_id: viteEnv.VITE_API_FOOTBALL_LEAGUE_ID || '1',
+  api_football_season: viteEnv.VITE_API_FOOTBALL_SEASON || '2026',
+  timezone: viteEnv.VITE_TOURNAMENT_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone,
   is_active: true,
 };
 
@@ -14,8 +16,9 @@ export function getActiveTournament(tournaments = []) {
 }
 
 export function getTournamentBySlug(tournaments = [], slug = '') {
-  if (!slug) return null;
-  return tournaments.find((tournament) => tournament.slug === slug) || null;
+  const normalizedSlug = String(slug || '').toLowerCase();
+  if (!normalizedSlug) return null;
+  return tournaments.find((tournament) => String(tournament.slug || '').toLowerCase() === normalizedSlug) || null;
 }
 
 export function scopedRows(rows = [], tournament) {

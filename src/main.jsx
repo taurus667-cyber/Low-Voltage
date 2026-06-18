@@ -22,6 +22,7 @@ import { calculateGroupStandings, getTeamStanding } from './lib/standings.js';
 import { getMatchesRefreshInterval } from './lib/polling.js';
 import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata.js';
 import { splitMatchEvents } from './lib/matchEvents.js';
+import { normalizePlayerName, validatePlayerFullName } from './lib/playerNames.js';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -236,13 +237,16 @@ function App() {
 function HomePage({ player, setPlayer, players, refresh, setMessage, setError, navigate, tournament, routeBase }) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
+  const [entryError, setEntryError] = useState('');
 
   const savePlayer = async (mode = 'auto') => {
-    const cleanName = name.trim();
+    const nameValidation = validatePlayerFullName(name);
+    const cleanName = nameValidation.name;
     setMessage('');
     setError('');
-    if (!cleanName) {
-      setError('Please enter your display name.');
+    setEntryError('');
+    if (!nameValidation.valid) {
+      setEntryError(nameValidation.message);
       return;
     }
 
@@ -282,12 +286,24 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
       navigate(buildRoute(routeBase, '/matches'));
     } catch (err) {
       if (isUniqueViolation(err)) {
-        setError('That display name is already registered. Use the existing profile.');
+        setEntryError('That display name is already registered. Use the existing profile.');
         await refresh();
         return;
       }
-      setError(err.message || 'Could not save player.');
+      setEntryError(err.message || 'Could not save player.');
     }
+  };
+
+  const continueAsStoredPlayer = () => {
+    const nameValidation = validatePlayerFullName(player?.name || '');
+    setMessage('');
+    setError('');
+    setEntryError('');
+    if (!nameValidation.valid) {
+      setEntryError('This saved profile uses a single name. Enter your first and last name to continue with a full-name profile.');
+      return;
+    }
+    navigate(buildRoute(routeBase, '/matches'));
   };
 
   return (
@@ -296,26 +312,28 @@ function HomePage({ player, setPlayer, players, refresh, setMessage, setError, n
         <p className="eyebrow">Private friends group</p>
         <h1>Predict {tournament.name} scores.</h1>
         <p className="hero-copy">
-          Enter your name, pick match scores, then watch the leaderboard update as results are added.
+          Enter your first and last name, pick match scores, then watch the leaderboard update as results are added.
         </p>
       </div>
       <div className="entry-panel">
-        <label htmlFor="player-name">Display name</label>
+        <label htmlFor="player-name">Full name</label>
         <input
           id="player-name"
           value={name}
           onChange={(event) => {
             setName(event.target.value);
             setMatches([]);
+            setEntryError('');
           }}
-          placeholder="Your WhatsApp name"
+          placeholder="First Last"
           maxLength={40}
         />
         <button className="primary" onClick={() => savePlayer()}>
           Continue
         </button>
+        {entryError && <p className="entry-error" role="alert">{entryError}</p>}
         {player && (
-          <button className="ghost" onClick={() => navigate(buildRoute(routeBase, '/matches'))}>
+          <button className="ghost" onClick={continueAsStoredPlayer}>
             Continue as {player.name}
           </button>
         )}
@@ -2176,9 +2194,9 @@ function HelpPage({ navigate, routeBase }) {
 
       <div className="panel help-intro">
         <p className="eyebrow">Quick guide</p>
-        <h2>Make your picks, follow the match, and enjoy the family leaderboard.</h2>
+        <h2>Make your picks, follow the match, and enjoy the group leaderboard.</h2>
         <p className="muted">
-          This page explains the basics in plain language. Your group may be the main app or a private family group, but the steps are the same.
+          This page explains the basics in plain language. Your group may be the main app or a private corporate group, but the steps are the same.
         </p>
         <div className="help-actions">
           <button className="primary" onClick={() => goTo('/matches')}>Go to matches</button>
@@ -2259,14 +2277,14 @@ function HelpPage({ navigate, routeBase }) {
               'Match Recap appears for played matches and shows useful information from the match, such as formations, stats, key events, and goals.',
           },
           {
-            question: 'What happens in a private family group?',
+            question: 'What happens in a private corporate group?',
             answer:
-              'A private group has its own players, predictions, favorites, and leaderboard. The match schedule and football data are shared from the main app so the group does not need a separate setup.',
+              'A private corporate group has its own players, predictions, favorites, and leaderboard. The match schedule and football data are shared from the main app so the group does not need a separate setup.',
           },
           {
-            question: 'Can I use the same name in different private groups?',
+            question: 'Can I use the same name in different corporate groups?',
             answer:
-              'Yes. Each private group is separate, so your picks and leaderboard position stay inside that group.',
+              'Yes. Each corporate group is separate, so your picks and leaderboard position stay inside that group. For BCI26, use your first and last name so the leaderboard stays clear.',
           },
         ].map((item) => (
           <details className="help-item" key={item.question}>
@@ -2527,10 +2545,6 @@ function isMissingOptionalRelation(error) {
   return error.code === 'PGRST205' ||
     error.code === '42P01' ||
     /could not find the table|schema cache|does not exist/i.test(error.message || '');
-}
-
-function normalizePlayerName(value) {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function isPlayerActive(player) {

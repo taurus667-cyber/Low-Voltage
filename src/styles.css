@@ -204,6 +204,17 @@ h2 {
   padding: 0.85rem;
 }
 
+.entry-error {
+  margin: -0.25rem 0 0;
+  border-left: 3px solid #c73a2c;
+  border-radius: 4px;
+  background: #fff0ee;
+  color: #8d241c;
+  font-size: 0.92rem;
+  font-weight: 700;
+  padding: 0.65rem 0.75rem;
+}
+
 .page-title {
   display: flex;
   align-items: center;
