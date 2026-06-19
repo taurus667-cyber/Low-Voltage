@@ -64,14 +64,37 @@ export function calculateLeaderboard(players, matches, predictions) {
     );
 }
 
+export function getLeaderboardRankStatus(rank) {
+  if (!Number.isInteger(rank) || rank < 1) return null;
+  if (rank === 1) {
+    return {
+      key: 'leader',
+      label: 'Leader',
+      shortLabel: 'Leader',
+    };
+  }
+  if (rank <= 10) {
+    return {
+      key: 'top10',
+      label: 'Top 10',
+      shortLabel: `Top 10 #${rank}`,
+    };
+  }
+  return null;
+}
+
 export function getPlayerTop10Status(leaderboardRows = [], playerId) {
   if (!playerId) return null;
   const visibleRows = leaderboardRows.filter((row) => row.predictions_submitted_count > 0 && row.total_points > 0);
   const index = visibleRows.findIndex((row) => row.player_id === playerId);
   if (index < 0 || index > 9) return null;
   const row = visibleRows[index];
+  const rank = index + 1;
+  const status = getLeaderboardRankStatus(rank);
   return {
-    rank: index + 1,
+    rank,
+    status_key: status?.key || 'top10',
+    status_label: status?.label || 'Top 10',
     player_id: row.player_id,
     name: row.name,
     total_points: row.total_points,

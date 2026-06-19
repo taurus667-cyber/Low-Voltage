@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getPlayerTop10Status } from './scoring.js';
+import { getLeaderboardRankStatus, getPlayerTop10Status } from './scoring.js';
 
 test('returns current Top 10 badge data for ranked players', () => {
   const rows = Array.from({ length: 10 }, (_, index) => ({
@@ -14,6 +14,8 @@ test('returns current Top 10 badge data for ranked players', () => {
 
   assert.deepEqual(getPlayerTop10Status(rows, 'player-2'), {
     rank: 2,
+    status_key: 'top10',
+    status_label: 'Top 10',
     player_id: 'player-2',
     name: 'Player 2',
     total_points: 19,
@@ -21,6 +23,43 @@ test('returns current Top 10 badge data for ranked players', () => {
     correct_outcome_count: 0,
     predictions_submitted_count: 1,
   });
+});
+
+test('returns leader status for the top ranked player', () => {
+  const rows = [{
+    player_id: 'player-1',
+    name: 'Player 1',
+    total_points: 20,
+    exact_score_count: 0,
+    correct_outcome_count: 0,
+    predictions_submitted_count: 1,
+  }];
+
+  assert.deepEqual(getPlayerTop10Status(rows, 'player-1'), {
+    rank: 1,
+    status_key: 'leader',
+    status_label: 'Leader',
+    player_id: 'player-1',
+    name: 'Player 1',
+    total_points: 20,
+    exact_score_count: 0,
+    correct_outcome_count: 0,
+    predictions_submitted_count: 1,
+  });
+});
+
+test('classifies leaderboard rank status', () => {
+  assert.deepEqual(getLeaderboardRankStatus(1), {
+    key: 'leader',
+    label: 'Leader',
+    shortLabel: 'Leader',
+  });
+  assert.deepEqual(getLeaderboardRankStatus(10), {
+    key: 'top10',
+    label: 'Top 10',
+    shortLabel: 'Top 10 #10',
+  });
+  assert.equal(getLeaderboardRankStatus(11), null);
 });
 
 test('does not return Top 10 badge data for rank 11 or lower', () => {

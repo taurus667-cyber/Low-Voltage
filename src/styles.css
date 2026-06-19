@@ -119,6 +119,12 @@ nav button.active,
   font-size: 0.88rem;
 }
 
+.top10-badge.leader {
+  border-color: #b7791f;
+  background: #ffd86b;
+  color: #372600;
+}
+
 .ghost {
   background: #eef7f4;
 }
@@ -1503,6 +1509,69 @@ th {
   color: #315b52;
   font-size: 0.82rem;
   text-transform: uppercase;
+}
+
+.leaderboard-row td {
+  vertical-align: middle;
+}
+
+.leaderboard-top10 td {
+  background: #f3fbf8;
+  border-bottom-color: #d4e9e2;
+}
+
+.leaderboard-leader td {
+  background: #fff7dc;
+  border-bottom-color: #efcf6b;
+}
+
+.leaderboard-rank,
+.leaderboard-player {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.leaderboard-rank {
+  justify-items: start;
+}
+
+.leaderboard-rank > strong {
+  color: #123c35;
+  font-size: 1rem;
+}
+
+.leaderboard-player > strong {
+  color: #102a27;
+}
+
+.leaderboard-player > span {
+  color: #63766f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.leaderboard-status {
+  display: inline-grid;
+  place-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #ffffff;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.leaderboard-leader .leaderboard-status {
+  background: #f6c343;
+  color: #372600;
+  box-shadow: 0 8px 20px rgba(246, 195, 67, 0.25);
+}
+
+.leaderboard-leader .leaderboard-rank > strong,
+.leaderboard-leader .leaderboard-player > strong {
+  color: #372600;
 }
 
 .admin-login {

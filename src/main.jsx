@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
-import { calculateLeaderboard, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
+import { calculateLeaderboard, getLeaderboardRankStatus, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
 import { getActiveTournament, getTournamentBySlug, scopedRows } from './lib/tournament.js';
 import {
@@ -296,10 +296,10 @@ function App() {
         )}
         {currentTop10Status && (
           <button
-            className="top10-badge"
+            className={`top10-badge ${currentTop10Status.status_key === 'leader' ? 'leader' : ''}`}
             onClick={openTop10Celebration}
           >
-            Top 10 #{currentTop10Status.rank}
+            {currentTop10Status.status_label} #{currentTop10Status.rank}
           </button>
         )}
         <nav aria-label="Primary navigation">
@@ -1508,17 +1508,35 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row, index) => (
-              <tr key={row.player_id}>
-                <td>{index + 1}</td>
-                <td>{row.name}</td>
-                <td><strong>{row.total_points}</strong></td>
-                <td>{liveRows.get(row.player_id)?.live_points || 0}</td>
-                <td>{row.exact_score_count}</td>
-                <td>{row.correct_outcome_count}</td>
-                <td>{row.predictions_submitted_count}</td>
-              </tr>
-            ))}
+            {visibleRows.map((row, index) => {
+              const rank = index + 1;
+              const rankStatus = getLeaderboardRankStatus(rank);
+              return (
+                <tr
+                  className={rankStatus ? `leaderboard-row leaderboard-${rankStatus.key}` : 'leaderboard-row'}
+                  key={row.player_id}
+                >
+                  <td>
+                    <span className="leaderboard-rank">
+                      <strong>#{rank}</strong>
+                      {rankStatus && <span className="leaderboard-status">{rankStatus.label}</span>}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="leaderboard-player">
+                      <strong>{row.name}</strong>
+                      {rankStatus?.key === 'leader' && <span>Current top player</span>}
+                      {rankStatus?.key === 'top10' && <span>{rankStatus.shortLabel}</span>}
+                    </span>
+                  </td>
+                  <td><strong>{row.total_points}</strong></td>
+                  <td>{liveRows.get(row.player_id)?.live_points || 0}</td>
+                  <td>{row.exact_score_count}</td>
+                  <td>{row.correct_outcome_count}</td>
+                  <td>{row.predictions_submitted_count}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1529,7 +1547,8 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
 
 function Top10CelebrationModal({ celebration, onClose }) {
   const [copied, setCopied] = useState(false);
-  const rankText = celebration.rank ? `Current rank: #${celebration.rank}` : 'Protected Top 10 status';
+  const statusLabel = celebration.statusLabel || 'Top 10';
+  const rankText = celebration.rank ? `${statusLabel}: #${celebration.rank}` : 'Protected Top 10 status';
   const copyCode = async () => {
     if (!celebration.code) return;
     try {
@@ -1546,7 +1565,7 @@ function Top10CelebrationModal({ celebration, onClose }) {
         <h1 id="top10-title">You made the Top 10</h1>
         <div className="top10-rank-pill">{rankText}</div>
         <p className="top10-player-line">
-          {celebration.playerName}, you are now on the protected Top 10 list.
+          {celebration.playerName}, you are now on the protected {statusLabel} list.
         </p>
         {celebration.code && (
           <div className="top10-code-actions">
@@ -1631,7 +1650,7 @@ function Top10CodePage({
         <p className="top10-kicker">Private Top 10 protection</p>
         <h2>{displayPlayer?.name || 'Your profile'}</h2>
         {currentTop10Status ? (
-          <div className="top10-rank-pill">Current rank: #{currentTop10Status.rank}</div>
+          <div className="top10-rank-pill">{currentTop10Status.status_label}: #{currentTop10Status.rank}</div>
         ) : (
           <div className="top10-rank-pill muted-pill">Protected status saved</div>
         )}
@@ -3132,6 +3151,7 @@ function createTop10Celebration({ player, code, status, firstReveal = false }) {
     playerName: player?.name || status?.name || 'Player',
     code: code || '',
     rank: status?.rank || null,
+    statusLabel: status?.status_label || 'Top 10',
     firstReveal,
   };
 }
