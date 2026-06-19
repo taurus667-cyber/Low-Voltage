@@ -17,8 +17,8 @@ export function areDuplicateEvents(a, b) {
     return normalizeEventDetailForKey(a) === normalizeEventDetailForKey(b);
   }
   if (!samePerson(a.player_name, b.player_name)) return false;
-  if (!samePerson(a.assist_name, b.assist_name)) return false;
   if (isGoalEvent(a) || isGoalEvent(b)) return true;
+  if (!samePerson(a.assist_name, b.assist_name)) return false;
   return normalizeEventDetailForKey(a) === normalizeEventDetailForKey(b);
 }
 

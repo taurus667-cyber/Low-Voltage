@@ -200,3 +200,29 @@ test('dedupes provider goals when stoppage time is also sent as absolute minute'
   assert.equal(goalEvents.length, 2);
   assert.deepEqual(goalEvents.map((event) => event.player_name), ['F. Balogun', 'G. Reyna']);
 });
+
+test('dedupes same stoppage-time goal when only one provider row includes an assist', () => {
+  const { goalEvents } = splitMatchEvents([
+    {
+      elapsed: 90,
+      extra_time: 2,
+      team_name: 'Canada',
+      player_name: 'J. David',
+      assist_name: null,
+      event_type: 'Goal',
+      event_detail: 'Normal Goal',
+    },
+    {
+      elapsed: 90,
+      extra_time: 2,
+      team_name: 'Canada',
+      player_name: 'J. David',
+      assist_name: 'N. Saliba',
+      event_type: 'Goal',
+      event_detail: 'Normal Goal',
+    },
+  ]);
+
+  assert.equal(goalEvents.length, 1);
+  assert.equal(goalEvents[0].player_name, 'J. David');
+});
