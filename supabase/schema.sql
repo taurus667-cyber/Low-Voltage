@@ -293,6 +293,10 @@ returns trigger
 language plpgsql
 as $$
 begin
+  if current_setting('request.jwt.claim.role', true) = 'service_role' then
+    return new;
+  end if;
+
   if not exists (
     select 1
     from public.players

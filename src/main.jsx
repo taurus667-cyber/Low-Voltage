@@ -2227,6 +2227,8 @@ function AdminPage(props) {
 }
 
 function AdminTools({
+  players,
+  predictions,
   matches,
   refresh,
   setMessage,
@@ -2440,6 +2442,15 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
       />
+      <AdminPlayersPanel
+        tournament={tournament}
+        players={players}
+        predictions={predictions}
+        matches={matches}
+        refresh={refresh}
+        setMessage={setMessage}
+        setError={setError}
+      />
       <div className="admin-grid">
         <div className="panel">
           <h2>{editingId ? 'Edit match' : 'Add match'}</h2>
@@ -2551,6 +2562,219 @@ function AdminLockButton({ match, quickUpdate }) {
     return <button onClick={() => quickUpdate(match.id, { is_locked: false })}>Unlock manual lock</button>;
   }
   return <button onClick={() => quickUpdate(match.id, { is_locked: true })}>Lock manually</button>;
+}
+
+function AdminPlayersPanel({ tournament, players, predictions, matches, refresh, setMessage, setError }) {
+  const activePlayers = useMemo(() => players.filter(isPlayerActive), [players]);
+  const [targetId, setTargetId] = useState(activePlayers[0]?.id || '');
+  const [sourceId, setSourceId] = useState('');
+  const [mergeReason, setMergeReason] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [conflictResolutions, setConflictResolutions] = useState({});
+  const [busy, setBusy] = useState('');
+  const [deactivationReasons, setDeactivationReasons] = useState({});
+  const predictionCounts = useMemo(() => countBy(predictions, 'player_id'), [predictions]);
+  const matchById = useMemo(() => new Map(matches.map((match) => [match.id, match])), [matches]);
+  const sortedPlayers = useMemo(
+    () => [...players].sort((a, b) => getPlayerDisplayName(a).localeCompare(getPlayerDisplayName(b))),
+    [players],
+  );
+
+  useEffect(() => {
+    if (targetId && activePlayers.some((player) => player.id === targetId)) return;
+    setTargetId(activePlayers[0]?.id || '');
+  }, [activePlayers, targetId]);
+
+  const resetPreview = () => {
+    setPreview(null);
+    setConflictResolutions({});
+  };
+
+  const loadPreview = async () => {
+    setMessage('');
+    setError('');
+    setBusy('preview');
+    try {
+      const payload = await runAdminPlayersRequest({
+        action: 'preview-merge',
+        tournament_id: tournament?.id,
+        target_player_id: targetId,
+        source_player_id: sourceId,
+      });
+      setPreview(payload);
+      setConflictResolutions(Object.fromEntries((payload.conflicts || []).map((conflict) => [conflict.match_id, 'target'])));
+    } catch (err) {
+      setError(err.message || 'Could not preview player merge.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const merge = async () => {
+    if (!preview) return;
+    if (!confirm(`Merge ${preview.source_player.name} into ${preview.target_player.name}? The source account will be deactivated.`)) return;
+    setMessage('');
+    setError('');
+    setBusy('merge');
+    try {
+      const conflict_resolutions = (preview.conflicts || []).map((conflict) => ({
+        match_id: conflict.match_id,
+        keep: conflictResolutions[conflict.match_id] || 'target',
+      }));
+      const payload = await runAdminPlayersRequest({
+        action: 'merge',
+        tournament_id: tournament?.id,
+        target_player_id: targetId,
+        source_player_id: sourceId,
+        reason: mergeReason,
+        conflict_resolutions,
+      });
+      setMessage(`Merged player profiles. Moved ${payload.counts?.moved_predictions || 0} picks and resolved ${payload.counts?.conflicts_resolved || 0} conflicts.`);
+      setMergeReason('');
+      setSourceId('');
+      resetPreview();
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not merge player profiles.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const deactivate = async (player) => {
+    const reason = deactivationReasons[player.id] || '';
+    if (!reason.trim()) {
+      setError('Enter a deactivation reason first.');
+      return;
+    }
+    if (!confirm(`Deactivate ${player.name}? Their picks will remain stored for audit.`)) return;
+    setMessage('');
+    setError('');
+    setBusy(player.id);
+    try {
+      await runAdminPlayersRequest({
+        action: 'deactivate',
+        tournament_id: tournament?.id,
+        player_id: player.id,
+        reason,
+      });
+      setMessage(`Deactivated ${player.name}.`);
+      setDeactivationReasons((current) => ({ ...current, [player.id]: '' }));
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not deactivate player.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <section className="panel admin-players-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Players</h2>
+          <p className="muted">Deactivate duplicate profiles or merge picks into one active account.</p>
+        </div>
+      </div>
+
+      <div className="admin-player-merge">
+        <label>
+          Keep active account
+          <select value={targetId} onChange={(event) => {
+            setTargetId(event.target.value);
+            resetPreview();
+          }}>
+            <option value="">Choose player</option>
+            {activePlayers.map((player) => (
+              <option key={player.id} value={player.id}>{player.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Merge and deactivate account
+          <select value={sourceId} onChange={(event) => {
+            setSourceId(event.target.value);
+            resetPreview();
+          }}>
+            <option value="">Choose player</option>
+            {sortedPlayers.filter((player) => player.id !== targetId).map((player) => (
+              <option key={player.id} value={player.id}>{getPlayerDisplayName(player)}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Merge reason
+          <input value={mergeReason} onChange={(event) => setMergeReason(event.target.value)} placeholder="Duplicate profile, name upgrade, or admin note" />
+        </label>
+        <button onClick={loadPreview} disabled={busy === 'preview' || !targetId || !sourceId}>
+          {busy === 'preview' ? 'Previewing...' : 'Preview merge'}
+        </button>
+      </div>
+
+      {preview && (
+        <div className="merge-preview">
+          <div className="merge-summary">
+            <span><strong>{preview.counts?.source_predictions || 0}</strong> source picks</span>
+            <span><strong>{preview.counts?.transferable_predictions || 0}</strong> movable</span>
+            <span><strong>{preview.counts?.conflicts || 0}</strong> conflicts</span>
+            <span><strong>{preview.counts?.source_favorites || 0}</strong> source favorites</span>
+          </div>
+          {(preview.conflicts || []).length > 0 && (
+            <div className="merge-conflicts">
+              <strong>Resolve duplicate match picks</strong>
+              {preview.conflicts.map((conflict) => (
+                <article key={conflict.match_id} className="merge-conflict-row">
+                  <div>
+                    <strong>{formatConflictMatch(conflict.match, matchById.get(conflict.match_id))}</strong>
+                    <p className="muted">Target: {formatPredictionScore(conflict.target_prediction)} · Source: {formatPredictionScore(conflict.source_prediction)}</p>
+                  </div>
+                  <select
+                    value={conflictResolutions[conflict.match_id] || 'target'}
+                    onChange={(event) => setConflictResolutions((current) => ({
+                      ...current,
+                      [conflict.match_id]: event.target.value,
+                    }))}
+                  >
+                    <option value="target">Keep target pick</option>
+                    <option value="source">Use source pick</option>
+                  </select>
+                </article>
+              ))}
+            </div>
+          )}
+          <button className="primary" onClick={merge} disabled={busy === 'merge' || !mergeReason.trim()}>
+            {busy === 'merge' ? 'Merging...' : 'Merge profiles'}
+          </button>
+        </div>
+      )}
+
+      <div className="admin-player-list">
+        {sortedPlayers.map((player) => (
+          <article className={`admin-player-row ${isPlayerActive(player) ? '' : 'inactive'}`} key={player.id}>
+            <div>
+              <strong>{getPlayerDisplayName(player)}</strong>
+              <p>{predictionCounts.get(player.id) || 0} picks · created {formatDate(player.created_at)}</p>
+              {!isPlayerActive(player) && <p>{player.deactivation_reason || 'Inactive player'}</p>}
+            </div>
+            {isPlayerActive(player) ? (
+              <div className="admin-player-actions">
+                <input
+                  value={deactivationReasons[player.id] || ''}
+                  onChange={(event) => setDeactivationReasons((current) => ({ ...current, [player.id]: event.target.value }))}
+                  placeholder="Deactivation reason"
+                />
+                <button className="danger" onClick={() => deactivate(player)} disabled={busy === player.id}>
+                  {busy === player.id ? 'Deactivating...' : 'Deactivate'}
+                </button>
+              </div>
+            ) : (
+              <span className="inactive-pill">Inactive</span>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function Top10CodesPanel({ tournament, setMessage, setError }) {
@@ -3105,11 +3329,28 @@ function latestTimestamp(values = []) {
     .at(-1) || '';
 }
 
+function countBy(rows = [], field) {
+  const counts = new Map();
+  rows.forEach((row) => counts.set(row[field], (counts.get(row[field]) || 0) + 1));
+  return counts;
+}
+
 function getLiveScore(match) {
   const scoreA = match.live_team_a_score ?? (match.status === 'live' ? match.team_a_score : null);
   const scoreB = match.live_team_b_score ?? (match.status === 'live' ? match.team_b_score : null);
   if (scoreA === null || scoreA === undefined || scoreB === null || scoreB === undefined) return '';
   return `${scoreA} - ${scoreB}`;
+}
+
+function formatPredictionScore(prediction) {
+  if (!prediction) return '-';
+  return `${prediction.predicted_team_a_score}-${prediction.predicted_team_b_score}`;
+}
+
+function formatConflictMatch(previewMatch, localMatch) {
+  const match = previewMatch || localMatch;
+  if (!match) return 'Unknown match';
+  return `${match.team_a} vs ${match.team_b}`;
 }
 
 function rowsForMatch(rows, matchId) {
@@ -3148,6 +3389,20 @@ async function runTop10Request(body, admin = false) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'Top 10 request failed.');
+  return payload;
+}
+
+async function runAdminPlayersRequest(body) {
+  const response = await fetch('/api/admin-players', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-password': sessionStorage.getItem('admin-password') || ADMIN_PASSWORD,
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Player admin request failed.');
   return payload;
 }
 
