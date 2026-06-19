@@ -60,32 +60,35 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows, aidRows, oddsRows] = await Promise.all([
+      const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows] = await Promise.all([
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
         supabase.from('players').select('id,tournament_id,name,is_active,deactivated_at,deactivation_reason,created_at').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         supabase.from('predictions').select('*').order('submitted_at'),
         optionalSelect(supabase.from('teams').select('*').order('name')),
         optionalSelect(supabase.from('player_favorite_teams').select('*').order('created_at')),
-        optionalSelect(supabase.from('match_prediction_aids').select('*').order('aid_type')),
-        optionalSelect(supabase.from('match_odds').select('*')),
       ]);
       throwIfError(playerRows.error);
       throwIfError(matchRows.error);
       throwIfError(predictionRows.error);
+      const loadedTournaments = tournamentRows.data || [];
       const loadedMatches = matchRows.data || [];
+      const selectedTournament = getTournamentBySlug(loadedTournaments, getRouteGroupSlug(route)) || getActiveTournament(loadedTournaments);
+      const selectedMatches = scopedRows(loadedMatches, selectedTournament);
+      const selectedMatchIds = selectedMatches.map((match) => match.id);
       const currentPageRoute = getPageRoute(route);
       const needsMatchDetails = currentPageRoute === '/matches' || currentPageRoute.startsWith('/nations/');
-      const hasLiveMatches = loadedMatches.some((match) => isMatchLive(match));
-      const [eventRows, statisticRows, lineupRows] = hasLiveMatches
-        || needsMatchDetails
+      const hasLiveMatches = selectedMatches.some((match) => isMatchLive(match));
+      const [eventRows, statisticRows, lineupRows, aidRows, oddsRows] = hasLiveMatches || needsMatchDetails
         ? await Promise.all([
-            optionalSelect(supabase.from('match_events').select('*').order('elapsed')),
-            optionalSelect(supabase.from('match_statistics').select('*')),
-            optionalSelect(supabase.from('match_lineups').select('*')),
+            selectRowsForMatches(supabase, 'match_events', selectedMatchIds, 'elapsed'),
+            selectRowsForMatches(supabase, 'match_statistics', selectedMatchIds),
+            selectRowsForMatches(supabase, 'match_lineups', selectedMatchIds),
+            selectRowsForMatches(supabase, 'match_prediction_aids', selectedMatchIds, 'aid_type'),
+            selectRowsForMatches(supabase, 'match_odds', selectedMatchIds),
           ])
-        : [{ data: [] }, { data: [] }, { data: [] }];
-      setTournaments(tournamentRows.data || []);
+        : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+      setTournaments(loadedTournaments);
       setPlayers(playerRows.data || []);
       setMatches(loadedMatches);
       setPredictions(predictionRows.data || []);
@@ -1372,17 +1375,87 @@ function EventChip({ event, teams = [] }) {
   const minute = event.elapsed !== null && event.elapsed !== undefined
     ? `${event.elapsed}${event.extra_time ? `+${event.extra_time}` : ''}'`
     : '';
-  const assist = event.assist_name ? `, assist ${event.assist_name}` : '';
   const team = event.team_name ? teamIdentity(event.team_name, teams) : null;
+  const visual = getEventVisual(event);
   return (
-    <span className="event-chip" title={event.team_name || undefined}>
+    <span className={`event-chip event-${visual.kind}`} title={buildEventTitle(event)}>
+      <span className="event-icon" aria-hidden="true">
+        {visual.card ? <span className={`event-card-icon ${visual.card}`} /> : visual.icon}
+      </span>
+      <strong className="event-minute">{minute}</strong>
       {team && <TeamFlag team={team} />}
-      <strong>{minute}</strong>
-      {event.player_name || formatEventType(event.event_type)}
-      {assist}
-      {event.event_detail ? ` (${formatEventDetail(event.event_detail)})` : ''}
+      <span className="event-main">
+        <strong>{visual.primary}</strong>
+        {visual.secondary && <small>{visual.secondary}</small>}
+      </span>
     </span>
   );
+}
+
+function getEventVisual(event) {
+  const type = String(event.event_type || '').toLowerCase();
+  const detail = String(event.event_detail || '').toLowerCase();
+  const player = event.player_name || formatEventType(event.event_type);
+  const assist = event.assist_name || '';
+  if (type.includes('subst')) {
+    return {
+      kind: 'substitution',
+      icon: '↕',
+      primary: assist ? `In: ${assist}` : 'Sub',
+      secondary: player ? `Out: ${player}` : '',
+    };
+  }
+  if (type.includes('card') || detail.includes('card')) {
+    const red = detail.includes('red');
+    return {
+      kind: red ? 'red-card' : 'yellow-card',
+      card: red ? 'red' : 'yellow',
+      primary: player,
+      secondary: red ? 'Red' : 'Yellow',
+    };
+  }
+  if (type.includes('var')) {
+    return {
+      kind: 'var',
+      icon: 'VAR',
+      primary: formatEventDetail(event.event_detail || event.event_type),
+      secondary: player && !/^var$/i.test(player) ? player : '',
+    };
+  }
+  if (/penalty/i.test(event.event_detail || '')) {
+    return {
+      kind: 'penalty',
+      icon: '●',
+      primary: player,
+      secondary: formatEventDetail(event.event_detail),
+    };
+  }
+  if (/goal/i.test(`${event.event_type || ''} ${event.event_detail || ''}`)) {
+    return {
+      kind: 'goal',
+      icon: '⚽',
+      primary: player,
+      secondary: assist ? `Assist: ${assist}` : formatEventDetail(event.event_detail),
+    };
+  }
+  return {
+    kind: 'generic',
+    icon: '•',
+    primary: player,
+    secondary: event.event_detail ? formatEventDetail(event.event_detail) : '',
+  };
+}
+
+function buildEventTitle(event) {
+  const parts = [
+    event.team_name,
+    event.elapsed !== null && event.elapsed !== undefined ? `${event.elapsed}${event.extra_time ? `+${event.extra_time}` : ''}'` : '',
+    formatEventType(event.event_type),
+    event.player_name,
+    event.assist_name ? `Involved: ${event.assist_name}` : '',
+    event.event_detail ? formatEventDetail(event.event_detail) : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function LeaderboardPage({ players, matches, predictions, refresh }) {
@@ -3127,6 +3200,13 @@ async function optionalSelect(query) {
   const result = await query;
   if (isMissingOptionalRelation(result.error)) return { data: [], error: null };
   return result;
+}
+
+async function selectRowsForMatches(supabaseClient, table, matchIds = [], orderField = '') {
+  if (!matchIds.length) return { data: [], error: null };
+  let query = supabaseClient.from(table).select('*').in('match_id', matchIds);
+  if (orderField) query = query.order(orderField);
+  return optionalSelect(query);
 }
 
 function isMissingOptionalRelation(error) {

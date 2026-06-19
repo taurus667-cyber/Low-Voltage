@@ -219,10 +219,12 @@ async function replaceChildRows(supabase, table, sourceTournamentId, targetTourn
     .eq('tournament_id', targetTournamentId);
   if (deleteError) throw deleteError;
 
+  const sourceMatchIds = [...matchMap.keys()];
+  if (!sourceMatchIds.length) return 0;
   const { data: sourceRows, error } = await supabase
     .from(table)
     .select('*')
-    .eq('tournament_id', sourceTournamentId);
+    .in('match_id', sourceMatchIds);
   if (error) throw error;
 
   const rows = (sourceRows || [])

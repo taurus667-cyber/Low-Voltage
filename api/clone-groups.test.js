@@ -80,6 +80,77 @@ test('linked clone refresh copies live match-center data from source', async () 
   assert.equal(cloneStats[0].match_id, cloneMatch.id);
 });
 
+test('clone refresh copies legacy insight rows that only point at source match ids', async () => {
+  const supabase = createMemorySupabase();
+  const created = await createCloneGroup(supabase, {
+    name: 'Family Group',
+    slug: 'family-group',
+    source_tournament_id: 'source-1',
+  });
+  supabase.tables.match_prediction_aids.push({
+    id: 'aid-legacy',
+    tournament_id: null,
+    match_id: 'match-1',
+    provider: 'API-Football',
+    aid_type: 'api_prediction',
+    title: 'API prediction',
+    summary: 'Home team',
+  });
+  supabase.tables.match_odds.push({
+    id: 'odds-source',
+    tournament_id: 'source-1',
+    match_id: 'match-1',
+    provider: 'API-Football',
+    bookmaker: 'Demo',
+    market: 'Match Winner',
+  });
+
+  const result = await refreshCloneGroup(supabase, created.clone.id);
+  const cloneMatch = supabase.tables.matches.find((row) => row.tournament_id === created.clone.id);
+  const cloneAids = supabase.tables.match_prediction_aids.filter((row) => row.tournament_id === created.clone.id);
+  const cloneOdds = supabase.tables.match_odds.filter((row) => row.tournament_id === created.clone.id);
+
+  assert.equal(result.copy.match_prediction_aids, 1);
+  assert.equal(result.copy.match_odds, 1);
+  assert.equal(cloneAids.length, 1);
+  assert.equal(cloneAids[0].match_id, cloneMatch.id);
+  assert.equal(cloneOdds.length, 1);
+  assert.equal(cloneOdds[0].match_id, cloneMatch.id);
+});
+
+test('clone refresh preserves valid match winner odds values for insight favorites', async () => {
+  const supabase = createMemorySupabase();
+  const created = await createCloneGroup(supabase, {
+    name: 'Family Group',
+    slug: 'family-group',
+    source_tournament_id: 'source-1',
+  });
+  supabase.tables.match_odds.push({
+    id: 'odds-source',
+    tournament_id: 'source-1',
+    match_id: 'match-1',
+    provider: 'API-Football',
+    bookmaker: 'Demo',
+    market: 'Match Winner',
+    home_value: '1.80',
+    draw_value: '3.20',
+    away_value: '4.50',
+    last_synced_at: '2026-06-19T08:00:00.000Z',
+  });
+
+  const result = await refreshCloneGroup(supabase, created.clone.id);
+  const cloneMatch = supabase.tables.matches.find((row) => row.tournament_id === created.clone.id);
+  const cloneOdds = supabase.tables.match_odds.filter((row) => row.tournament_id === created.clone.id);
+
+  assert.equal(result.copy.match_odds, 1);
+  assert.equal(cloneOdds.length, 1);
+  assert.equal(cloneOdds[0].match_id, cloneMatch.id);
+  assert.equal(cloneOdds[0].home_value, '1.80');
+  assert.equal(cloneOdds[0].draw_value, '3.20');
+  assert.equal(cloneOdds[0].away_value, '4.50');
+  assert.equal(cloneOdds[0].last_synced_at, '2026-06-19T08:00:00.000Z');
+});
+
 function createMemorySupabase() {
   const tables = {
     tournaments: [{
@@ -155,6 +226,11 @@ class MemoryQuery {
     return this;
   }
 
+  in(field, values) {
+    this.filters.push({ field, values: new Set(values), type: 'in' });
+    return this;
+  }
+
   order() {
     return this;
   }
@@ -227,7 +303,10 @@ class MemoryQuery {
 
   applyFilters() {
     return this.tables[this.table].filter((row) =>
-      this.filters.every((filter) => row[filter.field] === filter.value),
+      this.filters.every((filter) => {
+        if (filter.type === 'in') return filter.values.has(row[filter.field]);
+        return row[filter.field] === filter.value;
+      }),
     );
   }
 }
