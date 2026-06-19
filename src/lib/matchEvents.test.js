@@ -113,6 +113,52 @@ test('dedupes provider full-name and abbreviated key events', () => {
   ]);
 });
 
+test('dedupes same-team card clusters that arrive under different player names', () => {
+  const { keyEvents } = splitMatchEvents([
+    {
+      elapsed: 32,
+      team_name: 'Qatar',
+      player_name: 'H. Al Amin',
+      event_type: 'Card',
+      event_detail: 'Red Card',
+    },
+    {
+      elapsed: 33,
+      team_name: 'Qatar',
+      player_name: 'Homam Ahmed',
+      event_type: 'Card',
+      event_detail: 'Red Card',
+    },
+    {
+      elapsed: 33,
+      team_name: 'Qatar',
+      player_name: 'H. Al Amin',
+      event_type: 'Card',
+      event_detail: 'Red Card',
+    },
+    {
+      elapsed: 51,
+      team_name: 'Qatar',
+      player_name: 'A. O. Madibo',
+      event_type: 'Card',
+      event_detail: 'Yellow Card',
+    },
+    {
+      elapsed: 53,
+      team_name: 'Qatar',
+      player_name: 'A. O. Madibo',
+      event_type: 'Card',
+      event_detail: 'Red Card',
+    },
+  ]);
+
+  assert.equal(keyEvents.filter((event) => /red/i.test(event.event_detail)).length, 2);
+  assert.deepEqual(
+    keyEvents.filter((event) => /red/i.test(event.event_detail)).map((event) => event.player_name),
+    ['H. Al Amin', 'A. O. Madibo'],
+  );
+});
+
 test('dedupes provider goals when stoppage time is also sent as absolute minute', () => {
   const { goalEvents } = splitMatchEvents([
     {

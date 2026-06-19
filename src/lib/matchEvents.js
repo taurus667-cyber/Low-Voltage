@@ -13,6 +13,9 @@ export function areDuplicateEvents(a, b) {
   if (getEventCategory(a) !== getEventCategory(b)) return false;
   if (getTeamKey(a.team_name) !== getTeamKey(b.team_name)) return false;
   if (!isCloseMinute(a, b)) return false;
+  if (getEventCategory(a) === 'card') {
+    return normalizeEventDetailForKey(a) === normalizeEventDetailForKey(b);
+  }
   if (!samePerson(a.player_name, b.player_name)) return false;
   if (!samePerson(a.assist_name, b.assist_name)) return false;
   if (isGoalEvent(a) || isGoalEvent(b)) return true;
@@ -35,7 +38,7 @@ function isCloseMinute(a, b) {
   const aMinute = getEventMinute(a);
   const bMinute = getEventMinute(b);
   if (!Number.isFinite(aMinute) || !Number.isFinite(bMinute)) return (a.elapsed ?? '') === (b.elapsed ?? '');
-  const tolerance = getEventCategory(a) === 'subst' ? 1 : 0;
+  const tolerance = ['card', 'subst'].includes(getEventCategory(a)) ? 1 : 0;
   return Math.abs(aMinute - bMinute) <= tolerance;
 }
 
