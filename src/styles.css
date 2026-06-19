@@ -915,6 +915,10 @@ h2 {
   font-weight: 800;
 }
 
+.event-substitution .event-main small {
+  color: #2b5fba;
+}
+
 .event-goal {
   border-color: #bfe5d3;
   background: #f2fbf5;

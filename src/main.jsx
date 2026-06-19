@@ -1401,8 +1401,8 @@ function getEventVisual(event) {
     return {
       kind: 'substitution',
       icon: '↕',
-      primary: assist ? `In: ${assist}` : 'Sub',
-      secondary: player ? `Out: ${player}` : '',
+      primary: assist ? `↑ ${assist}` : 'Sub',
+      secondary: player ? `↓ ${player}` : '',
     };
   }
   if (type.includes('card') || detail.includes('card')) {
@@ -1411,7 +1411,7 @@ function getEventVisual(event) {
       kind: red ? 'red-card' : 'yellow-card',
       card: red ? 'red' : 'yellow',
       primary: player,
-      secondary: red ? 'Red' : 'Yellow',
+      secondary: '',
     };
   }
   if (type.includes('var')) {
@@ -1427,15 +1427,17 @@ function getEventVisual(event) {
       kind: 'penalty',
       icon: '●',
       primary: player,
-      secondary: formatEventDetail(event.event_detail),
+      secondary: /missed/i.test(event.event_detail || '') ? 'Missed' : '',
     };
   }
   if (/goal/i.test(`${event.event_type || ''} ${event.event_detail || ''}`)) {
+    const detailLabel = formatEventDetail(event.event_detail);
+    const showDetail = detailLabel && !/^goal$/i.test(detailLabel);
     return {
       kind: 'goal',
       icon: '⚽',
       primary: player,
-      secondary: assist ? `Assist: ${assist}` : formatEventDetail(event.event_detail),
+      secondary: assist ? `A: ${assist}` : showDetail ? detailLabel : '',
     };
   }
   return {
