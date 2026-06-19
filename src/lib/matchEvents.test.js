@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupeEvents, isGoalEvent, splitMatchEvents } from './matchEvents.js';
+import { dedupeEvents, groupKeyEvents, isGoalEvent, splitMatchEvents } from './matchEvents.js';
 
 test('dedupes repeated rendered goal events across provider wording', () => {
   const rows = dedupeEvents([
@@ -225,4 +225,54 @@ test('dedupes same stoppage-time goal when only one provider row includes an ass
 
   assert.equal(goalEvents.length, 1);
   assert.equal(goalEvents[0].player_name, 'J. David');
+});
+
+test('groups key events by event priority and chronological order inside each group', () => {
+  const groups = groupKeyEvents([
+    {
+      elapsed: 71,
+      team_name: 'Canada',
+      player_name: 'A. Ahmed',
+      assist_name: 'T. Oluwaseyi',
+      event_type: 'subst',
+      event_detail: 'Substitution 4',
+    },
+    {
+      elapsed: 62,
+      team_name: 'Qatar',
+      player_name: 'A. Fathi',
+      event_type: 'Card',
+      event_detail: 'Yellow Card',
+    },
+    {
+      elapsed: 33,
+      team_name: 'Canada',
+      player_name: 'Tajon Buchanan',
+      event_type: 'Var',
+      event_detail: 'Penalty cancelled',
+    },
+    {
+      elapsed: 32,
+      team_name: 'Qatar',
+      player_name: 'H. Al Amin',
+      event_type: 'Card',
+      event_detail: 'Red Card',
+    },
+    {
+      elapsed: 51,
+      team_name: 'Qatar',
+      player_name: 'A. O. Madibo',
+      event_type: 'Card',
+      event_detail: 'Yellow Card',
+    },
+  ]);
+
+  assert.deepEqual(groups.map((group) => group.key), [
+    'red-cards',
+    'yellow-cards',
+    'reviews',
+    'substitutions',
+  ]);
+  assert.deepEqual(groups.map((group) => group.count), [1, 2, 1, 1]);
+  assert.deepEqual(groups[1].events.map((event) => event.elapsed), [51, 62]);
 });

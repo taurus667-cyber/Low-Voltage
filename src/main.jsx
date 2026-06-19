@@ -21,7 +21,7 @@ import {
 import { calculateGroupStandings, getTeamStanding } from './lib/standings.js';
 import { getMatchesRefreshInterval } from './lib/polling.js';
 import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata.js';
-import { splitMatchEvents } from './lib/matchEvents.js';
+import { groupKeyEvents, splitMatchEvents } from './lib/matchEvents.js';
 import { normalizePlayerName, validatePlayerFullName } from './lib/playerNames.js';
 import './styles.css';
 
@@ -1078,6 +1078,7 @@ function MatchCentre({
   emptyText = 'Live event details will appear when the provider publishes them.',
 }) {
   const { keyEvents, goalEvents } = splitMatchEvents(events);
+  const keyEventGroups = groupKeyEvents(events);
   const statComparison = buildStatComparison(statistics);
   const hasPredictionInsight = aids.length > 0 || odds.length > 0;
   const insightSummary = match && hasPredictionInsight ? buildPredictionAidSummary({ match, teams, aids, odds, lineups }) : null;
@@ -1134,8 +1135,19 @@ function MatchCentre({
       {keyEvents.length > 0 && (
         <div className="event-group">
           <strong>Key events</strong>
-          <div className="event-list">
-            {keyEvents.map((event) => <EventChip key={event.id} event={event} teams={teams} />)}
+          <div className="event-groups">
+            {keyEventGroups.map((group) => (
+              <section className={`event-priority-group event-priority-${group.key}`} key={group.key}>
+                <div className="event-priority-heading">
+                  <EventGroupIcon icon={group.icon} />
+                  <span>{group.label}</span>
+                  <strong>{group.count}</strong>
+                </div>
+                <div className="event-list">
+                  {group.events.map((event) => <EventChip key={event.id} event={event} teams={teams} />)}
+                </div>
+              </section>
+            ))}
           </div>
         </div>
       )}
@@ -1390,6 +1402,20 @@ function EventChip({ event, teams = [] }) {
       </span>
     </span>
   );
+}
+
+function EventGroupIcon({ icon }) {
+  if (icon === 'red-card' || icon === 'yellow-card') {
+    return (
+      <span className="event-group-icon" aria-hidden="true">
+        <span className={`event-card-icon ${icon === 'red-card' ? 'red' : 'yellow'}`} />
+      </span>
+    );
+  }
+  if (icon === 'var') {
+    return <span className="event-group-icon event-group-icon-var" aria-hidden="true">VAR</span>;
+  }
+  return <span className="event-group-icon" aria-hidden="true">↕</span>;
 }
 
 function getEventVisual(event) {

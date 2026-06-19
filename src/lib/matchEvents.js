@@ -102,6 +102,39 @@ export function splitMatchEvents(events = []) {
   return { keyEvents, goalEvents };
 }
 
+export function groupKeyEvents(events = []) {
+  const { keyEvents } = splitMatchEvents(events);
+  const groups = KEY_EVENT_GROUPS.map((group) => ({
+    ...group,
+    events: keyEvents
+      .filter((event) => getKeyEventGroupKey(event) === group.key)
+      .sort((a, b) => getEventMinute(a) - getEventMinute(b)),
+  }));
+  return groups
+    .filter((group) => group.events.length > 0)
+    .map((group) => ({
+      ...group,
+      count: group.events.length,
+    }));
+}
+
+const KEY_EVENT_GROUPS = [
+  { key: 'red-cards', label: 'Red cards', icon: 'red-card' },
+  { key: 'yellow-cards', label: 'Yellow cards', icon: 'yellow-card' },
+  { key: 'reviews', label: 'VAR / reviews', icon: 'var' },
+  { key: 'substitutions', label: 'Substitutions', icon: 'substitution' },
+];
+
+function getKeyEventGroupKey(event) {
+  const category = getEventCategory(event);
+  if (category === 'card') {
+    return /red/i.test(event.event_detail || '') ? 'red-cards' : 'yellow-cards';
+  }
+  if (category === 'var') return 'reviews';
+  if (category === 'subst') return 'substitutions';
+  return '';
+}
+
 function getEventDisplayKey(event) {
   return [
     getEventMinute(event),
