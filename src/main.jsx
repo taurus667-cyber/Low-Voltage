@@ -2864,7 +2864,7 @@ function HelpPage({ navigate, routeBase }) {
         <article className="panel help-card">
           <span className="help-step">3</span>
           <h2>Follow results</h2>
-          <p>After matches are played, check Picks and Leaderboard to see how everyone did.</p>
+          <p>After matches are played, check recaps, Picks, and the highlighted Leaderboard to see how everyone did.</p>
         </article>
       </div>
 
@@ -2872,7 +2872,7 @@ function HelpPage({ navigate, routeBase }) {
         <h2>What each page is for</h2>
         <div className="help-link-list">
           <button onClick={() => goTo('/matches')}>Matches</button>
-          <p>Submit predictions, see live scores, open Match Insight, and review played-match recaps.</p>
+          <p>Submit predictions, see live scores, open Match Insight, and review played-match recaps with stats, goals, and grouped key events.</p>
           <button onClick={() => goTo('/predictions')}>Picks</button>
           <p>Check your own predictions and see everyone else after picks are revealed.</p>
           <button onClick={() => goTo('/groups')}>Groups</button>
@@ -2880,7 +2880,7 @@ function HelpPage({ navigate, routeBase }) {
           <button onClick={() => goTo('/favorites')}>Favorites</button>
           <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
           <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
-          <p>Track points after matches finish. Your name appears once you submit a prediction, and Top 10 status starts only after you score points.</p>
+          <p>Track points after matches finish. Rank #1 is marked as Leader, ranks #2-#10 are highlighted as Top 10, and your name appears once you submit a prediction.</p>
           <button onClick={() => goTo('/top10-code')}>My code</button>
           <p>Protected Top 10 players can view and copy their private code for keeping their profile safe on a new browser or device.</p>
         </div>
@@ -2921,27 +2921,32 @@ function HelpPage({ navigate, routeBase }) {
           {
             question: 'What is Top 10 protection?',
             answer:
-              'When you enter the current Top 10 with more than zero points, you get a celebration message, a private code, and a Top 10 badge. Copy or save your code. It protects your profile, picks, leaderboard history, and earned Top 10 status if you use a new browser or device.',
+              'When you enter the current Top 10 with more than zero points, you get a celebration message, a private code, and a status badge. Rank #1 appears as Leader, while ranks #2 to #10 appear as Top 10. Copy or save your code. It protects your profile, picks, leaderboard history, and earned status if you use a new browser or device.',
           },
           {
             question: 'Why did my Top 10 badge disappear?',
             answer:
-              'The Top 10 badge appears only while you are currently ranked 1 to 10. If you drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
+              'The Leader or Top 10 badge appears only while you are currently ranked 1 to 10. If you drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
           },
           {
             question: 'What is Match Insight?',
             answer:
-              'Match Insight gives quick helper information before the match. It is collapsed by default to keep the page short, but the header shows when extra information is available.',
+              'Match Insight gives quick helper information before the match, including prediction aids and match-winner odds when available. The header shows the item count, the latest update time, and the favored team when the odds have enough data.',
           },
           {
             question: 'What is Match Recap?',
             answer:
-              'Match Recap appears for played matches and shows useful information from the match, such as formations, stats, key events, and goals.',
+              'Match Recap appears for played matches and shows formations, comparison stats, grouped key events, goals, market view, and odds. Key events are grouped by priority so red cards, yellow cards, VAR reviews, and substitutions are easier to scan.',
+          },
+          {
+            question: 'Why do some event boxes disappear or group together?',
+            answer:
+              'The football provider can send duplicate event rows. The app cleans up common duplicates for display, such as repeated cards, goals, and substitutions, while keeping the raw provider data in the database.',
           },
           {
             question: 'What happens in a private corporate group?',
             answer:
-              'A private corporate group has its own players, predictions, favorites, and leaderboard. The match schedule and football data are shared from the main app so the group does not need a separate setup.',
+              'A private corporate group has its own players, predictions, favorites, and leaderboard. The match schedule, live data, insights, odds, and recaps are copied from the source app so the group does not need separate provider calls.',
           },
           {
             question: 'Can I use the same name in different corporate groups?',
