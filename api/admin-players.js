@@ -28,7 +28,7 @@ export default async function handler(request, response) {
 
     return response.status(400).json({ error: 'Unknown player admin action.' });
   } catch (error) {
-    return response.status(500).json({ error: error.message || 'Player admin action failed.' });
+    return response.status(500).json({ error: toPublicPlayerAdminError(error) });
   }
 }
 
@@ -309,6 +309,14 @@ function isMissingOptionalRelation(error) {
   return error.code === 'PGRST205' ||
     error.code === '42P01' ||
     /could not find the table|schema cache|does not exist/i.test(error.message || '');
+}
+
+function toPublicPlayerAdminError(error) {
+  const message = error?.message || String(error || '');
+  if (/Predictions cannot be changed after the match is locked or kickoff time has passed/i.test(message)) {
+    return 'Player merge is blocked by the database prediction-lock trigger. Apply the admin_player_merge_service_role Supabase migration, then try again.';
+  }
+  return message || 'Player admin action failed.';
 }
 
 async function getRequestBody(request) {

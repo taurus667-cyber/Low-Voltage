@@ -6,7 +6,9 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if current_setting('request.jwt.claim.role', true) = 'service_role' then
+  if current_setting('request.jwt.claim.role', true) = 'service_role'
+    or coalesce(current_setting('request.jwt.claims', true)::jsonb ->> 'role', '') = 'service_role'
+  then
     return new;
   end if;
 
