@@ -359,6 +359,57 @@ h2 {
   gap: 1rem;
 }
 
+.match-day-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.match-day-group {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.match-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-height: 52px;
+  border-color: #bfd8d0;
+  background: #eef8f5;
+  color: #123c35;
+  padding: 0.75rem 0.9rem;
+  text-align: left;
+}
+
+.match-day-header span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.match-day-header strong {
+  font-size: 1.02rem;
+}
+
+.match-day-header small {
+  color: #63766f;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.match-day-header em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f766e;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.84rem;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .live-section {
   display: grid;
   gap: 0.85rem;
@@ -441,6 +492,17 @@ h2 {
   align-items: start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.dashboard-item .picks-summary-main > div:first-child {
+  min-width: 0;
+}
+
+.picks-summary-actions {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  justify-items: stretch;
 }
 
 .dashboard-item span {
@@ -1270,10 +1332,58 @@ h2 {
   color: #63766f;
 }
 
-.result {
-  border-left: 4px solid #0f766e;
-  padding-left: 0.75rem;
-  font-weight: 800;
+.final-score-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #9fcac0;
+  border-left: 5px solid #0f766e;
+  border-radius: 8px;
+  background: #eef8f5;
+  color: #123c35;
+  padding: 0.8rem 1rem;
+}
+
+.final-score-card span {
+  color: #315b52;
+  font-size: 0.9rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.final-score-card strong {
+  color: #062f2a;
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.picks-final-score {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.55rem;
+  width: fit-content;
+  border: 1px solid #b6d8cf;
+  border-radius: 999px;
+  background: #eef8f5;
+  color: #123c35;
+  padding: 0.35rem 0.65rem;
+  font-weight: 900;
+}
+
+.picks-final-score span {
+  color: #4a635c;
+  font-size: 0.82rem;
+}
+
+.picks-final-score strong {
+  color: #0f766e;
+  font-size: 1.12rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .submitted-panel {
@@ -1938,6 +2048,16 @@ th {
   .help-grid,
   .help-link-list {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-item .picks-summary-main,
+  .match-day-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .picks-summary-actions {
+    justify-items: start;
   }
 
   .help-link-list button {

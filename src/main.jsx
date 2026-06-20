@@ -27,6 +27,7 @@ import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
 const STATUSES = ['scheduled', 'live', 'finished'];
+const KSA_TIME_ZONE = 'Asia/Riyadh';
 
 function App() {
   const [route, setRoute] = useRoute();
@@ -719,11 +720,23 @@ function MatchesPage({
     [publishedMatches],
   );
   const visibleMatches = matchView === 'played' ? playedMatches : upcomingMatches;
+  const visibleMatchGroups = useMemo(() => groupMatchesByKsaDay(visibleMatches), [visibleMatches]);
+  const [expandedMatchDayKeys, setExpandedMatchDayKeys] = useState(() => new Set());
   const liveLeaderboard = useMemo(
     () => calculateLiveLeaderboard(players, matches, predictions),
     [players, matches, predictions],
   );
   const refreshInterval = getMatchesRefreshInterval(publishedMatches);
+
+  useEffect(() => {
+    const groupKeys = new Set(visibleMatchGroups.map((group) => group.key));
+    const defaultKey = visibleMatchGroups[0]?.key || '';
+    setExpandedMatchDayKeys((current) => {
+      const retainedKeys = [...current].filter((key) => groupKeys.has(key));
+      if (retainedKeys.length) return new Set(retainedKeys);
+      return defaultKey ? new Set([defaultKey]) : new Set();
+    });
+  }, [visibleMatchGroups]);
 
   useEffect(() => {
     if (!currentPlayer || !isPlayerActive(currentPlayer)) return undefined;
@@ -738,11 +751,23 @@ function MatchesPage({
     const targetId = window.location.hash.replace('#match-', '');
     if (!targetId) return;
     const targetMatch = publishedMatches.find((match) => match.id === targetId);
-    if (targetMatch && isMatchPlayed(targetMatch)) setMatchView('played');
+    if (targetMatch) {
+      if (isMatchPlayed(targetMatch)) setMatchView('played');
+      setExpandedMatchDayKeys((current) => new Set([...current, getKsaDayKey(targetMatch.kickoff_time)]));
+    }
     window.setTimeout(() => {
       document.getElementById(`match-${targetId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 50);
   }, [publishedMatches]);
+
+  const toggleMatchDay = (dayKey) => {
+    setExpandedMatchDayKeys((current) => {
+      const next = new Set(current);
+      if (next.has(dayKey)) next.delete(dayKey);
+      else next.add(dayKey);
+      return next;
+    });
+  };
 
   if (!currentPlayer) {
     return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
@@ -806,8 +831,11 @@ function MatchesPage({
           Played ({playedMatches.length})
         </button>
       </div>
-      <div className="match-list">
-        {visibleMatches.map((match) => (
+      <MatchDayGroups
+        groups={visibleMatchGroups}
+        expandedKeys={expandedMatchDayKeys}
+        onToggle={toggleMatchDay}
+        renderMatch={(match) => (
           <PredictionCard
             key={match.id}
             match={match}
@@ -829,8 +857,8 @@ function MatchesPage({
             navigate={navigate}
             routeBase={routeBase}
           />
-        ))}
-      </div>
+        )}
+      />
       {!publishedMatches.length && <EmptyState text="No published matches yet. Ask the admin to import or add fixtures." />}
       {publishedMatches.length > 0 && !visibleMatches.length && (
         <EmptyState
@@ -838,6 +866,38 @@ function MatchesPage({
         />
       )}
     </section>
+  );
+}
+
+function MatchDayGroups({ groups, expandedKeys, onToggle, renderMatch }) {
+  if (!groups.length) return null;
+
+  return (
+    <div className="match-day-list">
+      {groups.map((group) => {
+        const expanded = expandedKeys.has(group.key);
+        return (
+          <section className="match-day-group" key={group.key}>
+            <button
+              className="match-day-header"
+              onClick={() => onToggle(group.key)}
+              aria-expanded={expanded}
+            >
+              <span>
+                <strong>{group.label}</strong>
+                <small>KSA local time</small>
+              </span>
+              <em>{group.matches.length} match{group.matches.length === 1 ? '' : 'es'}</em>
+            </button>
+            {expanded && (
+              <div className="match-list">
+                {group.matches.map((match) => renderMatch(match))}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -935,6 +995,12 @@ function PredictionCard({
           {match.last_synced_at && <span>Synced {formatDate(match.last_synced_at)}</span>}
         </div>
       )}
+      {hasResult && (
+        <div className="final-score-card" aria-label={`Final score ${match.team_a_score} to ${match.team_b_score}`}>
+          <span>Final score</span>
+          <strong>{match.team_a_score} - {match.team_b_score}</strong>
+        </div>
+      )}
       {live && (
         <MatchCentre
           events={events}
@@ -964,11 +1030,6 @@ function PredictionCard({
       )}
       {!live && !played && (
         <PredictionAid match={match} teams={teams} aids={aids} odds={odds} lineups={lineups} itemCount={aidItemCount} />
-      )}
-      {hasResult && (
-        <p className="result">
-          Final: {match.team_a_score} - {match.team_b_score}
-        </p>
       )}
       <div className="submitted-panel">
         <div className="submitted-header">
@@ -2055,6 +2116,7 @@ function PicksMatchSummary({
     isPlayerActive(playersById.get(prediction.player_id)),
   ).length;
   const percent = activePlayerCount ? Math.round((activeSubmittedCount / activePlayerCount) * 100) : 0;
+  const hasFinalScore = !live && isMatchPlayed(match) && isFinalScoreComplete(match);
 
   return (
     <article className={`dashboard-item picks-summary${live ? ' live-card' : ''}${expanded ? ' expanded' : ''}`}>
@@ -2068,9 +2130,17 @@ function PicksMatchSummary({
           <span>{match.group_name || match.stage || 'Match'} - {formatDate(match.kickoff_time)}</span>
         </div>
         {!live && (
-          <button className="ghost picks-expand-button" onClick={onToggle} aria-expanded={expanded}>
-            {expanded ? 'Hide picks' : 'Show picks'}
-          </button>
+          <div className="picks-summary-actions">
+            {hasFinalScore && (
+              <div className="picks-final-score" aria-label={`Final score ${match.team_a_score} to ${match.team_b_score}`}>
+                <span>Final score</span>
+                <strong>{match.team_a_score} - {match.team_b_score}</strong>
+              </div>
+            )}
+            <button className="ghost picks-expand-button" onClick={onToggle} aria-expanded={expanded}>
+              {expanded ? 'Hide picks' : 'Show picks'}
+            </button>
+          </div>
         )}
       </div>
       <div className="prediction-count">
@@ -3307,6 +3377,51 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function getKsaDayKey(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: KSA_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const partMap = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+}
+
+function formatKsaDayLabel(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date TBD';
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: KSA_TIME_ZONE,
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function groupMatchesByKsaDay(matches = []) {
+  const groups = [];
+  const groupsByKey = new Map();
+  matches.forEach((match) => {
+    const key = getKsaDayKey(match.kickoff_time);
+    let group = groupsByKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: formatKsaDayLabel(match.kickoff_time),
+        matches: [],
+      };
+      groupsByKey.set(key, group);
+      groups.push(group);
+    }
+    group.matches.push(match);
+  });
+  return groups;
 }
 
 function formatRelativeTime(value, now = Date.now()) {
