@@ -23,6 +23,7 @@ import { getMatchesRefreshInterval } from './lib/polling.js';
 import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata.js';
 import { groupKeyEvents, splitMatchEvents } from './lib/matchEvents.js';
 import { normalizePlayerName, validatePlayerFullName } from './lib/playerNames.js';
+import { selectAllRows } from './lib/supabasePaging.js';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -65,7 +66,7 @@ function App() {
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
         supabase.from('players').select('id,tournament_id,name,is_active,deactivated_at,deactivation_reason,created_at').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
-        supabase.from('predictions').select('*').order('submitted_at'),
+        selectAllRows(() => supabase.from('predictions').select('*').order('submitted_at')),
         optionalSelect(supabase.from('teams').select('*').order('name')),
         optionalSelect(supabase.from('player_favorite_teams').select('*').order('created_at')),
       ]);

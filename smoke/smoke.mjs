@@ -133,6 +133,7 @@ try {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
     await page.setViewportSize({ width: 1280, height: 720 });
+    await verifyInactiveStoredPlayerGate(page);
   } else {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await expectVisible(page, 'text=Matches');
@@ -365,6 +366,43 @@ async function verifyPredictionSubmit(page, options = {}) {
   )) {
     throw new Error('Expected smoke prediction upsert to be recorded.');
   }
+}
+
+async function verifyInactiveStoredPlayerGate(page) {
+  const activeStoredPlayer = await page.evaluate(() => localStorage.getItem('current-player'));
+  smokePlayers.push({
+    id: 'player-inactive-duplicate',
+    name: 'Smoke Tester',
+    player_token: 'inactive-token',
+    tournament_id: 'tournament-smoke',
+    is_active: false,
+    deactivated_at: new Date().toISOString(),
+    deactivation_reason: 'Duplicate profile',
+    created_at: new Date().toISOString(),
+  });
+  const predictionCount = smokePredictions.length;
+  await page.evaluate(() => {
+    localStorage.setItem('current-player', JSON.stringify({
+      id: 'player-inactive-duplicate',
+      name: 'Smoke Tester',
+      player_token: 'inactive-token',
+      tournament_id: 'tournament-smoke',
+      is_active: false,
+    }));
+  });
+  await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Profile inactive');
+  await expectVisible(page, 'text=This duplicate profile was deactivated.');
+  if (await page.getByRole('button', { name: /prediction/i }).count()) {
+    throw new Error('Inactive duplicate profile should not see prediction submit buttons.');
+  }
+  if (smokePredictions.length !== predictionCount) {
+    throw new Error('Inactive duplicate profile should not create prediction writes.');
+  }
+  await page.evaluate((storedPlayer) => {
+    if (storedPlayer) localStorage.setItem('current-player', storedPlayer);
+    else localStorage.removeItem('current-player');
+  }, activeStoredPlayer);
 }
 
 async function waitForUrl(url) {
