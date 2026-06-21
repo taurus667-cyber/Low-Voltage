@@ -24,7 +24,7 @@ export async function runBracketSync() {
   const existingRows = await fetchExistingBracketRows(supabase, tournament);
   const now = new Date().toISOString();
   const rows = OFFICIAL_KNOCKOUT_PLACEHOLDERS.map((slot) => {
-    const existing = existingRows.get(slot.bracket_slot);
+    const existing = existingRows.get(slot.bracket_slot) || existingRows.get(slot.external_match_id);
     return {
       tournament_id: tournament.id || null,
       external_match_id: slot.external_match_id,
@@ -50,10 +50,7 @@ export async function runBracketSync() {
     };
   });
 
-  const { error } = await supabase
-    .from('matches')
-    .upsert(rows, { onConflict: 'tournament_id,external_match_id' });
-  if (error) throw error;
+  const writeCounts = await writeBracketRows(supabase, rows, existingRows);
 
   let clones = { refreshed: 0 };
   try {
@@ -65,6 +62,8 @@ export async function runBracketSync() {
   return {
     tournament: tournament.slug,
     matches: rows.length,
+    inserted: writeCounts.inserted,
+    updated: writeCounts.updated,
     placeholders: rows.filter((row) => isPlaceholderTeam(row.team_a) || isPlaceholderTeam(row.team_b)).length,
     clones,
   };
@@ -73,12 +72,41 @@ export async function runBracketSync() {
 async function fetchExistingBracketRows(supabase, tournament) {
   let query = supabase
     .from('matches')
-    .select('*')
-    .not('bracket_slot', 'is', null);
+    .select('*');
   if (tournament.id) query = query.eq('tournament_id', tournament.id);
   const { data, error } = await query;
   if (error) throw error;
-  return new Map((data || []).map((row) => [row.bracket_slot, row]));
+  const map = new Map();
+  (data || []).forEach((row) => {
+    if (row.bracket_slot) map.set(row.bracket_slot, row);
+    if (row.external_match_id) map.set(row.external_match_id, row);
+  });
+  return map;
+}
+
+async function writeBracketRows(supabase, rows, existingRows) {
+  let inserted = 0;
+  let updated = 0;
+
+  for (const row of rows) {
+    const existing = existingRows.get(row.bracket_slot) || existingRows.get(row.external_match_id);
+    if (existing?.id) {
+      const { error } = await supabase
+        .from('matches')
+        .update(row)
+        .eq('id', existing.id);
+      if (error) throw error;
+      updated += 1;
+    } else {
+      const { error } = await supabase
+        .from('matches')
+        .insert(row);
+      if (error) throw error;
+      inserted += 1;
+    }
+  }
+
+  return { inserted, updated };
 }
 
 function keepRealTeam(current, fallback) {
