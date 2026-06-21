@@ -670,7 +670,7 @@ function MatchesPage({
   tournament,
 }) {
   const [matchView, setMatchView] = useState('upcoming');
-  const publishedMatches = matches.filter((match) => match.is_published);
+  const publishedMatches = useMemo(() => matches.filter((match) => match.is_published), [matches]);
   const currentPlayer = players.find((item) => item.id === player?.id) || player;
   const playersById = useMemo(() => new Map(players.map((item) => [item.id, item])), [players]);
   const predictionsByMatch = useMemo(() => {
@@ -923,6 +923,8 @@ function PredictionCard({
 }) {
   const [teamAScore, setTeamAScore] = useState(prediction?.predicted_team_a_score ?? '');
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
+  const [saving, setSaving] = useState(false);
+  const [localStatus, setLocalStatus] = useState(null);
   const locked = isMatchLocked(match);
   const lockReason = getMatchLockReason(match);
   const live = isMatchLive(match);
@@ -940,18 +942,25 @@ function PredictionCard({
   }, [prediction?.id, prediction?.predicted_team_a_score, prediction?.predicted_team_b_score]);
 
   const submit = async () => {
+    if (saving) return;
     setMessage('');
     setError('');
+    setLocalStatus(null);
     const scoreA = parseScore(teamAScore);
     const scoreB = parseScore(teamBScore);
     if (locked) {
-      setError('Predictions are locked for this match.');
+      const message = 'Predictions are locked for this match.';
+      setLocalStatus({ type: 'error', text: message });
+      setError(message);
       return;
     }
     if (scoreA === null || scoreB === null) {
-      setError('Scores must be non-negative whole numbers.');
+      const message = 'Scores must be non-negative whole numbers.';
+      setLocalStatus({ type: 'error', text: message });
+      setError(message);
       return;
     }
+    setSaving(true);
     try {
       const { error } = await supabase.from('predictions').upsert(
         {
@@ -965,10 +974,15 @@ function PredictionCard({
         { onConflict: 'player_id,match_id' },
       );
       throwIfError(error);
+      setLocalStatus({ type: 'success', text: `Prediction saved: ${scoreA}-${scoreB}` });
       setMessage('Prediction saved.');
       await refresh();
     } catch (err) {
-      setError(err.message || 'Could not save prediction.');
+      const message = err.message || 'Could not save prediction.';
+      setLocalStatus({ type: 'error', text: message });
+      setError(message);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1072,9 +1086,20 @@ function PredictionCard({
           />
         </label>
       </div>
-      <button className="primary" onClick={submit} disabled={locked}>
-        {prediction ? 'Update prediction' : 'Submit prediction'}
-      </button>
+      <div className="prediction-submit-row">
+        <button className={`primary prediction-submit-button${localStatus?.type === 'success' ? ' saved' : ''}`} onClick={submit} disabled={locked || saving}>
+          {saving ? 'Saving...' : prediction ? 'Update prediction' : 'Submit prediction'}
+        </button>
+        {localStatus && (
+          <p
+            className={`prediction-submit-status ${localStatus.type}`}
+            role={localStatus.type === 'error' ? 'alert' : undefined}
+            aria-live={localStatus.type === 'success' ? 'polite' : undefined}
+          >
+            {localStatus.text}
+          </p>
+        )}
+      </div>
       {locked && <p className="lock-note">{lockReason}</p>}
     </article>
   );

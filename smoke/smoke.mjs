@@ -20,27 +20,37 @@ if (!isProdSmoke) {
 const browser = await chromium.launch();
 const page = await browser.newPage();
 const fatalConsole = [];
+const smokePlayers = [];
+const smokePredictions = [];
 page.on('console', (message) => {
   if (message.type() === 'error') fatalConsole.push(message.text());
 });
 page.on('pageerror', (error) => fatalConsole.push(error.message));
 
 try {
+  await page.route('**/api/top10-status', async (route) => {
+    if (isProdSmoke) return route.continue();
+    return route.fulfill(json({ protected: false, created: 0 }));
+  });
   await page.route('**/rest/v1/tournaments*', async (route) => {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json([smokeTournament()]));
   });
   await page.route('**/rest/v1/players*', async (route, request) => {
     if (isProdSmoke) return route.continue();
-    if (request.method() === 'GET') return route.fulfill(json([]));
+    if (request.method() === 'GET') return route.fulfill(json(smokePlayers.map(({ player_token, ...player }) => player)));
     if (request.method() === 'POST') {
-      return route.fulfill(json([{
+      const payload = request.postDataJSON();
+      const player = {
         id: 'player-smoke',
-        name: 'Smoke Tester',
-        player_token: 'smoke-token',
+        name: payload.name,
+        player_token: payload.player_token,
+        tournament_id: payload.tournament_id || 'tournament-smoke',
         is_active: true,
         created_at: new Date().toISOString(),
-      }]));
+      };
+      smokePlayers.push(player);
+      return route.fulfill(json(player));
     }
     return route.continue();
   });
@@ -50,7 +60,28 @@ try {
   });
   await page.route('**/rest/v1/predictions*', async (route) => {
     if (isProdSmoke) return route.continue();
-    return route.fulfill(json([]));
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill(json(smokePredictions));
+    if (['POST', 'PATCH'].includes(request.method())) {
+      const payload = request.postDataJSON();
+      const rows = Array.isArray(payload) ? payload : [payload];
+      rows.forEach((row) => {
+        const existingIndex = smokePredictions.findIndex(
+          (prediction) => prediction.player_id === row.player_id && prediction.match_id === row.match_id,
+        );
+        const next = {
+          id: existingIndex >= 0 ? smokePredictions[existingIndex].id : `prediction-${smokePredictions.length + 1}`,
+          submitted_at: existingIndex >= 0 ? smokePredictions[existingIndex].submitted_at : new Date().toISOString(),
+          ...row,
+        };
+        if (existingIndex >= 0) smokePredictions[existingIndex] = next;
+        else smokePredictions.push(next);
+      });
+      return route.fulfill(json(rows.map((row) => smokePredictions.find(
+        (prediction) => prediction.player_id === row.player_id && prediction.match_id === row.match_id,
+      ))));
+    }
+    return route.continue();
   });
   await page.route('**/rest/v1/teams*', async (route) => {
     if (isProdSmoke) return route.continue();
@@ -81,7 +112,7 @@ try {
   await expectVisible(page, 'text=Predict Smoke Cup scores.');
 
   if (!isProdSmoke) {
-    await page.getByLabel('Display name').fill('Smoke Tester');
+    await page.getByLabel('Full name').fill('Smoke Tester');
     await page.getByRole('button', { name: 'Continue' }).click();
     await expectVisible(page, 'text=Live now');
     await expectVisible(page, 'text=Canada');
@@ -93,11 +124,15 @@ try {
     await expectVisible(page, 'text=Predictions are closed because kickoff time has passed.');
     await expectVisible(page, 'text=Played (1)');
     await page.getByTitle('Open Canada profile').first().click();
-    await expectVisible(page, 'text=API-Football profile');
+    await expectVisible(page, 'text=Canada');
     await expectVisible(page, 'text=Fixtures and results');
     await page.goto(`${baseUrl}/groups`, { waitUntil: 'networkidle' });
     await expectVisible(page, 'text=Group A');
-    await expectVisible(page, 'text=Standings are calculated');
+    await verifyPredictionSubmit(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
+    await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
+    await page.setViewportSize({ width: 1280, height: 720 });
   } else {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await expectVisible(page, 'text=Matches');
@@ -302,6 +337,33 @@ function smokeOdds() {
 
 async function expectVisible(page, selector) {
   await page.locator(selector).first().waitFor({ state: 'visible', timeout: 10000 });
+}
+
+async function verifyPredictionSubmit(page, options = {}) {
+  const {
+    scoreA = '2',
+    scoreB = '1',
+    buttonName = 'Submit prediction',
+  } = options;
+  await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
+  const card = page.locator('#match-match-upcoming');
+  await card.scrollIntoViewIfNeeded();
+  await card.getByLabel('USA').fill(scoreA);
+  await card.getByLabel('Brazil').fill(scoreB);
+  const button = card.getByRole('button', { name: buttonName });
+  await button.waitFor({ state: 'visible', timeout: 10000 });
+  if (!(await button.isEnabled())) {
+    throw new Error(`${buttonName} button should be enabled for the upcoming smoke match.`);
+  }
+  await button.click();
+  await card.getByText(`Prediction saved: ${scoreA}-${scoreB}`).waitFor({ state: 'visible', timeout: 10000 });
+  if (!smokePredictions.some((prediction) =>
+    prediction.match_id === 'match-upcoming' &&
+    prediction.predicted_team_a_score === Number(scoreA) &&
+    prediction.predicted_team_b_score === Number(scoreB)
+  )) {
+    throw new Error('Expected smoke prediction upsert to be recorded.');
+  }
 }
 
 async function waitForUrl(url) {

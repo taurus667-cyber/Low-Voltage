@@ -1437,6 +1437,67 @@ h2 {
   font-weight: 800;
 }
 
+.prediction-submit-row {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.prediction-submit-button {
+  width: 100%;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.prediction-submit-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.prediction-submit-button.saved {
+  border-color: #17613c;
+  background: #17613c;
+}
+
+.prediction-submit-status {
+  margin: 0;
+  border: 1px solid;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.92rem;
+  font-weight: 800;
+  animation: prediction-status-in 180ms ease-out;
+}
+
+.prediction-submit-status.success {
+  border-color: #9dd6bf;
+  background: #e9f8ef;
+  color: #17613c;
+}
+
+.prediction-submit-status.error {
+  border-color: #f0b3aa;
+  background: #fff0ee;
+  color: #9b271d;
+}
+
+@keyframes prediction-status-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prediction-submit-button,
+  .prediction-submit-status {
+    animation: none;
+    transition: none;
+  }
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid #d6e4df;
@@ -2078,6 +2139,10 @@ th {
   .team-block.end .team-flag,
   .team-block.end .flag-placeholder {
     order: 0;
+  }
+
+  .prediction-submit-button {
+    min-height: 48px;
   }
 
   .nation-logo {
