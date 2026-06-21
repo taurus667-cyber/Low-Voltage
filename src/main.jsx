@@ -925,6 +925,7 @@ function PredictionCard({
   const [teamBScore, setTeamBScore] = useState(prediction?.predicted_team_b_score ?? '');
   const [saving, setSaving] = useState(false);
   const [localStatus, setLocalStatus] = useState(null);
+  const [localSavedPrediction, setLocalSavedPrediction] = useState(null);
   const locked = isMatchLocked(match);
   const lockReason = getMatchLockReason(match);
   const live = isMatchLive(match);
@@ -935,11 +936,26 @@ function PredictionCard({
   const teamA = teamIdentity(match.team_a, teams);
   const teamB = teamIdentity(match.team_b, teams);
   const played = isMatchPlayed(match);
+  const displayedSubmittedPredictions = useMemo(() => {
+    const byPlayer = new Map(submittedPredictions.map((item) => [item.player_id, item]));
+    [prediction, localSavedPrediction].forEach((item) => {
+      if (item?.player_id === player?.id) byPlayer.set(item.player_id, item);
+    });
+    return [...byPlayer.values()].sort((a, b) =>
+      getPlayerDisplayName(playersById.get(a.player_id)).localeCompare(
+        getPlayerDisplayName(playersById.get(b.player_id)),
+      ),
+    );
+  }, [submittedPredictions, prediction, localSavedPrediction, player?.id, playersById]);
 
   useEffect(() => {
     setTeamAScore(prediction?.predicted_team_a_score ?? '');
     setTeamBScore(prediction?.predicted_team_b_score ?? '');
   }, [prediction?.id, prediction?.predicted_team_a_score, prediction?.predicted_team_b_score]);
+
+  useEffect(() => {
+    setLocalSavedPrediction(null);
+  }, [match.id, player?.id]);
 
   const submit = async () => {
     if (saving) return;
@@ -974,6 +990,15 @@ function PredictionCard({
         { onConflict: 'player_id,match_id' },
       );
       throwIfError(error);
+      setLocalSavedPrediction({
+        id: prediction?.id || `local-${player.id}-${match.id}`,
+        player_id: player.id,
+        match_id: match.id,
+        predicted_team_a_score: scoreA,
+        predicted_team_b_score: scoreB,
+        submitted_at: prediction?.submitted_at || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
       setLocalStatus({ type: 'success', text: `Prediction saved: ${scoreA}-${scoreB}` });
       setMessage('Prediction saved.');
       await refresh();
@@ -1048,12 +1073,12 @@ function PredictionCard({
       <div className="submitted-panel">
         <div className="submitted-header">
           <strong>Submitted by</strong>
-          <span>{submittedPredictions.length} player{submittedPredictions.length === 1 ? '' : 's'}</span>
+          <span>{displayedSubmittedPredictions.length} player{displayedSubmittedPredictions.length === 1 ? '' : 's'}</span>
         </div>
-        {submittedPredictions.length > 0 ? (
+        {displayedSubmittedPredictions.length > 0 ? (
           <div className="submitted-list">
-            {submittedPredictions.map((submittedPrediction) => (
-              <span key={submittedPrediction.id}>
+            {displayedSubmittedPredictions.map((submittedPrediction) => (
+              <span key={submittedPrediction.id || `${submittedPrediction.player_id}-${submittedPrediction.match_id}`}>
                 {getPlayerDisplayName(playersById.get(submittedPrediction.player_id))}
               </span>
             ))}

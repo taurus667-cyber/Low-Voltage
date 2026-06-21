@@ -357,6 +357,7 @@ async function verifyPredictionSubmit(page, options = {}) {
   }
   await button.click();
   await card.getByText(`Prediction saved: ${scoreA}-${scoreB}`).waitFor({ state: 'visible', timeout: 10000 });
+  await card.locator('.submitted-panel').getByText('Smoke Tester').waitFor({ state: 'visible', timeout: 10000 });
   if (!smokePredictions.some((prediction) =>
     prediction.match_id === 'match-upcoming' &&
     prediction.predicted_team_a_score === Number(scoreA) &&
