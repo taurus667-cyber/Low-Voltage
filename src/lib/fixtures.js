@@ -33,6 +33,12 @@ export function normalizeFixtureRows(rows) {
       external_match_id: externalId,
       stage: row.stage || null,
       group_name: row.group_name || null,
+      bracket_round: cleanOptional(row.bracket_round),
+      bracket_slot: cleanOptional(row.bracket_slot),
+      bracket_side: cleanOptional(row.bracket_side),
+      winner_to_slot: cleanOptional(row.winner_to_slot),
+      winner_to_side: cleanOptional(row.winner_to_side),
+      loser_to_slot: cleanOptional(row.loser_to_slot),
       team_a: teamA,
       team_b: teamB,
       kickoff_time: kickoffDate.toISOString(),
@@ -87,4 +93,9 @@ function parseOptionalScore(value) {
     throw new Error(`Fixture score must be a non-negative integer.`);
   }
   return score;
+}
+
+function cleanOptional(value) {
+  const text = String(value || '').trim();
+  return text || null;
 }

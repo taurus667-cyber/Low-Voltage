@@ -122,14 +122,16 @@ try {
     await expectVisible(page, 'text=Match stats');
     await expectVisible(page, 'text=Shots on target');
     await expectVisible(page, 'text=Predictions are closed because kickoff time has passed.');
-    await expectVisible(page, 'text=Played (1)');
+    await expectVisible(page, 'text=Played (2)');
     await page.getByTitle('Open Canada profile').first().click();
     await expectVisible(page, 'text=Canada');
     await expectVisible(page, 'text=Fixtures and results');
     await page.goto(`${baseUrl}/groups`, { waitUntil: 'networkidle' });
     await expectVisible(page, 'text=Group A');
+    await verifyBracketPage(page);
     await verifyPredictionSubmit(page);
     await page.setViewportSize({ width: 390, height: 844 });
+    await verifyBracketPage(page);
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -139,9 +141,9 @@ try {
     await expectVisible(page, 'text=Matches');
   }
 
-  for (const route of ['/predictions', '/groups', '/leaderboard', '/admin']) {
+  for (const route of ['/predictions', '/groups', '/bracket', '/leaderboard', '/admin']) {
     await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
-    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/groups' ? 'text=Groups' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
+    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/groups' ? 'text=Groups' : route === '/bracket' ? 'text=Bracket' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
   }
 
   if (isProdSmoke) {
@@ -219,6 +221,63 @@ function smokeMatches() {
       team_b_score: 1,
       status: 'finished',
       is_locked: true,
+      is_published: true,
+    },
+    {
+      id: 'match-r32',
+      tournament_id: 'tournament-smoke',
+      external_match_id: 'M73',
+      team_a: 'Argentina',
+      team_b: 'Brazil',
+      kickoff_time: future,
+      venue: 'Smoke Knockout Stadium',
+      stage: 'Round of 32',
+      bracket_round: 'round-of-32',
+      bracket_slot: 'M73',
+      bracket_side: 'left',
+      winner_to_slot: 'M89',
+      winner_to_side: 'A',
+      team_a_score: 2,
+      team_b_score: 1,
+      status: 'finished',
+      is_locked: true,
+      is_published: true,
+    },
+    {
+      id: 'match-r16',
+      tournament_id: 'tournament-smoke',
+      external_match_id: 'M89',
+      team_a: 'TBD',
+      team_b: 'France',
+      kickoff_time: new Date(now + 4 * 24 * 60 * 60 * 1000).toISOString(),
+      venue: 'Smoke Round 16 Stadium',
+      stage: 'Round of 16',
+      bracket_round: 'round-of-16',
+      bracket_slot: 'M89',
+      bracket_side: 'left',
+      winner_to_slot: 'M97',
+      winner_to_side: 'A',
+      team_a_score: null,
+      team_b_score: null,
+      status: 'scheduled',
+      is_locked: false,
+      is_published: true,
+    },
+    {
+      id: 'match-third',
+      tournament_id: 'tournament-smoke',
+      external_match_id: 'M103',
+      team_a: 'TBD',
+      team_b: 'TBD',
+      kickoff_time: new Date(now + 20 * 24 * 60 * 60 * 1000).toISOString(),
+      venue: 'Smoke Third Place Stadium',
+      stage: 'Third-place match',
+      bracket_round: 'third-place',
+      bracket_slot: 'M103',
+      team_a_score: null,
+      team_b_score: null,
+      status: 'scheduled',
+      is_locked: false,
       is_published: true,
     },
   ];
@@ -403,6 +462,17 @@ async function verifyInactiveStoredPlayerGate(page) {
     if (storedPlayer) localStorage.setItem('current-player', storedPlayer);
     else localStorage.removeItem('current-player');
   }, activeStoredPlayer);
+}
+
+async function verifyBracketPage(page) {
+  await page.goto(`${baseUrl}/bracket`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Round of 32');
+  await expectVisible(page, 'text=M73');
+  await expectVisible(page, 'img[alt="Argentina flag"]');
+  await expectVisible(page, 'text=Winner to M89');
+  await expectVisible(page, 'text=Third-place match');
+  await page.locator('.bracket-node-main', { hasText: 'M73' }).first().click();
+  await page.waitForURL(/\/matches#match-match-r32/, { timeout: 10000 });
 }
 
 async function waitForUrl(url) {

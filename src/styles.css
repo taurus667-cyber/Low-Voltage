@@ -1519,6 +1519,172 @@ h2 {
   margin: 0;
 }
 
+.bracket-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.bracket-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.bracket-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  gap: 0.9rem;
+  min-width: 1120px;
+  align-items: start;
+}
+
+.bracket-round,
+.bracket-match-list,
+.bracket-third-list,
+.third-place-panel,
+.bracket-health-panel {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.bracket-round-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  border-bottom: 2px solid #0f766e;
+}
+
+.bracket-round-title h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.bracket-round-title span,
+.health-pill {
+  border: 1px solid #bfd5cd;
+  border-radius: 999px;
+  background: #eef7f4;
+  color: #27534a;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.bracket-node {
+  position: relative;
+}
+
+.bracket-node::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -0.9rem;
+  width: 0.9rem;
+  border-top: 2px solid #b7ccc5;
+}
+
+.bracket-round:last-child .bracket-node::after,
+.bracket-node.compact::after {
+  display: none;
+}
+
+.bracket-node-main {
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  gap: 0.45rem;
+  border: 1px solid #bfd5cd;
+  border-radius: 8px;
+  padding: 0.7rem;
+  text-align: left;
+  color: #16201d;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(22, 32, 29, 0.06);
+}
+
+.bracket-node-main:hover {
+  border-color: #0f766e;
+}
+
+.bracket-node-main.placeholder {
+  cursor: default;
+}
+
+.bracket-node-main.placeholder:hover {
+  border-color: #bfd5cd;
+}
+
+.bracket-template-note {
+  width: 100%;
+  margin: 0;
+  border-color: #cfe0da;
+  background: #f2faf7;
+  color: #27534a;
+}
+
+.bracket-node-meta,
+.bracket-node-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #55726b;
+  font-size: 0.74rem;
+}
+
+.bracket-node-meta strong {
+  color: #0f766e;
+}
+
+.bracket-team {
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #d7e5e0;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  background: #fbfdfc;
+}
+
+.bracket-team span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bracket-team-flag-only {
+  width: fit-content;
+}
+
+.bracket-team-flag-only .team-flag,
+.bracket-team-flag-only .flag-placeholder {
+  width: 36px;
+  height: 26px;
+}
+
+.bracket-team.winner {
+  border-color: #82c7a7;
+  background: #e9f8ef;
+  color: #17613c;
+}
+
+.health-pill.ok {
+  border-color: #9dd6bf;
+  background: #e9f8ef;
+  color: #17613c;
+}
+
+.health-pill.warning {
+  border-color: #e9c46a;
+  background: #fff8df;
+  color: #73510b;
+}
+
 .table-team {
   display: inline-flex;
   align-items: center;
@@ -2092,7 +2258,7 @@ th {
 
   nav {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   nav button {
@@ -2162,6 +2328,28 @@ th {
 
   .prediction-submit-button {
     min-height: 48px;
+  }
+
+  .bracket-scroll {
+    overflow-x: visible;
+  }
+
+  .bracket-grid {
+    min-width: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .bracket-node::after {
+    display: none;
+  }
+
+  .bracket-node-main {
+    padding: 0.85rem;
+  }
+
+  .bracket-node-meta,
+  .bracket-node-foot {
+    display: grid;
   }
 
   .nation-logo {

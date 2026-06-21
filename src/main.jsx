@@ -24,6 +24,7 @@ import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata
 import { groupKeyEvents, splitMatchEvents } from './lib/matchEvents.js';
 import { normalizePlayerName, validatePlayerFullName } from './lib/playerNames.js';
 import { selectAllRows } from './lib/supabasePaging.js';
+import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -314,6 +315,9 @@ function App() {
           <button className={pageRoute === '/groups' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/groups'))}>
             Groups
           </button>
+          <button className={pageRoute === '/bracket' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/bracket'))}>
+            Bracket
+          </button>
           <button className={pageRoute === '/favorites' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/favorites'))}>
             Favorites
           </button>
@@ -339,6 +343,7 @@ function App() {
         {pageRoute === '/matches' && <MatchesPage {...pageProps} />}
         {pageRoute === '/predictions' && <PredictionsPage {...pageProps} />}
         {pageRoute === '/groups' && <GroupsPage {...pageProps} />}
+        {pageRoute === '/bracket' && <BracketPage {...pageProps} />}
         {pageRoute === '/favorites' && <FavoritesPage {...pageProps} />}
         {pageRoute.startsWith('/nations/') && <NationPage {...pageProps} route={pageRoute} />}
         {pageRoute === '/leaderboard' && <LeaderboardPage {...pageProps} />}
@@ -1146,8 +1151,8 @@ function TeamBlock({ team, align = 'start', navigate, routeBase = '' }) {
 }
 
 function TeamFlag({ team }) {
-  if (!team?.flag_url) return <span className="flag-placeholder" aria-hidden="true">{(team?.name || '?').slice(0, 2).toUpperCase()}</span>;
-  return <img className="team-flag" src={team.flag_url} alt={`${team.name} flag`} loading="lazy" />;
+  if (!team?.flag_url) return <span className="flag-placeholder" title={team?.name || ''} aria-hidden="true">{(team?.name || '?').slice(0, 2).toUpperCase()}</span>;
+  return <img className="team-flag" src={team.flag_url} alt={`${team.name} flag`} title={team.name} loading="lazy" />;
 }
 
 function FavoriteTeamButton({ team, isFavorite, onToggle, player }) {
@@ -1850,6 +1855,115 @@ function GroupsPage({ matches, teams, teamFavorites, toggleTeamFavorite, player,
   );
 }
 
+function BracketPage({ matches, teams, refresh, navigate, routeBase }) {
+  const bracket = useMemo(() => buildBracket(matches), [matches]);
+
+  return (
+    <section className="bracket-page">
+      <PageTitle title="Bracket" action={<button onClick={refresh}>Refresh</button>} />
+      <p className="muted">
+        FIFA World Cup 2026 knockout path: 32 teams, five champion rounds, and a separate third-place match.
+      </p>
+      {!bracket.hasRealMatches && (
+        <div className="banner bracket-template-note">
+          Showing the official bracket template. Teams, venues, and match links will activate as knockout fixtures are imported.
+        </div>
+      )}
+      <div className="bracket-scroll" aria-label="Knockout bracket">
+        <div className="bracket-grid">
+          {bracket.rounds.map((round) => (
+            <section className="bracket-round" key={round.key} aria-labelledby={`bracket-${round.key}`}>
+              <div className="bracket-round-title">
+                <h2 id={`bracket-${round.key}`}>{round.label}</h2>
+                <span>{round.matches.length}</span>
+              </div>
+              <div className="bracket-match-list">
+                {round.matches.map((match) => (
+                  <BracketMatchNode
+                    key={match.id}
+                    match={match}
+                    teams={teams}
+                    slots={bracket.slots}
+                    navigate={navigate}
+                    routeBase={routeBase}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+      <section className="third-place-panel" aria-labelledby="third-place-title">
+        <div className="section-heading">
+          <h2 id="third-place-title">Third-place match</h2>
+          <span>Official side match</span>
+        </div>
+        <div className="bracket-third-list">
+          {bracket.thirdPlace.map((match) => (
+            <BracketMatchNode
+              key={match.id}
+              match={match}
+              teams={teams}
+              slots={bracket.slots}
+              navigate={navigate}
+              routeBase={routeBase}
+              compact
+            />
+          ))}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function BracketMatchNode({ match, teams, slots, navigate, routeBase, compact = false }) {
+  const winner = getMatchWinner(match);
+  const teamA = teamIdentity(match.team_a, teams);
+  const teamB = teamIdentity(match.team_b, teams);
+  const scoreReady = isFinalScoreComplete(match);
+  const labelA = getTeamSeedLabel(match, 'A', slots);
+  const labelB = getTeamSeedLabel(match, 'B', slots);
+  const slotLabel = match.bracket_slot || match.external_match_id || 'Slot';
+  const goToMatch = () => navigate(`${buildRoute(routeBase, '/matches')}#match-${match.id}`);
+  const Wrapper = match.is_placeholder ? 'div' : 'button';
+  const wrapperProps = match.is_placeholder ? {} : { onClick: goToMatch };
+
+  return (
+    <article className={`bracket-node ${compact ? 'compact' : ''}`}>
+      <Wrapper className={`bracket-node-main ${match.is_placeholder ? 'placeholder' : ''}`} {...wrapperProps}>
+        <span className="bracket-node-meta">
+          <strong>{slotLabel}</strong>
+          <span>{match.date_label || formatDate(match.kickoff_time)}</span>
+        </span>
+        <span className={`bracket-team ${winner?.side === 'A' ? 'winner' : ''}`}>
+          <BracketTeamLabel match={match} team={teamA} label={labelA} />
+          {scoreReady && <strong>{match.team_a_score}</strong>}
+        </span>
+        <span className={`bracket-team ${winner?.side === 'B' ? 'winner' : ''}`}>
+          <BracketTeamLabel match={match} team={teamB} label={labelB} />
+          {scoreReady && <strong>{match.team_b_score}</strong>}
+        </span>
+        <span className="bracket-node-foot">
+          <span>{match.venue || 'Venue TBD'}</span>
+          {match.winner_to_slot ? <em>Winner to {match.winner_to_slot}</em> : <em>{match.is_placeholder ? 'Fixture pending' : 'Match link'}</em>}
+        </span>
+      </Wrapper>
+    </article>
+  );
+}
+
+function BracketTeamLabel({ match, team, label }) {
+  const realTeam = !match.is_placeholder && !isBracketSourceLabel(label);
+  if (realTeam) {
+    return (
+      <span className="bracket-team-flag-only" title={label} aria-label={label}>
+        <TeamFlag team={team} />
+      </span>
+    );
+  }
+  return <span title={label}>{label}</span>;
+}
+
 function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navigate, routeBase }) {
   if (!player) {
     return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
@@ -2372,6 +2486,12 @@ function AdminTools({
     kickoff_time: '',
     venue: '',
     status: 'scheduled',
+    bracket_round: '',
+    bracket_slot: '',
+    bracket_side: '',
+    winner_to_slot: '',
+    winner_to_side: '',
+    loser_to_slot: '',
     is_locked: false,
     is_published: true,
     team_a_score: '',
@@ -2421,6 +2541,12 @@ function AdminTools({
         external_match_id: form.external_match_id.trim() || null,
         stage: form.stage.trim() || null,
         group_name: form.group_name.trim() || null,
+        bracket_round: form.bracket_round?.trim() || null,
+        bracket_slot: form.bracket_slot?.trim() || null,
+        bracket_side: form.bracket_side?.trim() || null,
+        winner_to_slot: form.winner_to_slot?.trim() || null,
+        winner_to_side: form.winner_to_side?.trim() || null,
+        loser_to_slot: form.loser_to_slot?.trim() || null,
         team_a: form.team_a.trim(),
         team_b: form.team_b.trim(),
         kickoff_time: new Date(form.kickoff_time).toISOString(),
@@ -2527,6 +2653,9 @@ function AdminTools({
       if (payload.prematch) {
         parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
       }
+      if (payload.bracket) {
+        parts.push(`bracket ${payload.bracket.matches || 0} slots`);
+      }
       if (payload.live) {
         parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}, top 10 new ${payload.live.top10?.created || 0}`);
       }
@@ -2579,6 +2708,7 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
       />
+      <BracketHealthPanel matches={matches} />
       <div className="admin-grid">
         <div className="panel">
           <h2>{editingId ? 'Edit match' : 'Add match'}</h2>
@@ -2591,6 +2721,18 @@ function AdminTools({
           <div className="two-col">
             <AdminInput label="Stage" value={form.stage || ''} onChange={(value) => setField('stage', value)} />
             <AdminInput label="Group" value={form.group_name || ''} onChange={(value) => setField('group_name', value)} />
+          </div>
+          <div className="two-col">
+            <AdminInput label="Bracket round" value={form.bracket_round || ''} onChange={(value) => setField('bracket_round', value)} />
+            <AdminInput label="Bracket slot" value={form.bracket_slot || ''} onChange={(value) => setField('bracket_slot', value)} />
+          </div>
+          <div className="two-col">
+            <AdminInput label="Winner to slot" value={form.winner_to_slot || ''} onChange={(value) => setField('winner_to_slot', value)} />
+            <AdminInput label="Winner to side" value={form.winner_to_side || ''} onChange={(value) => setField('winner_to_side', value)} />
+          </div>
+          <div className="two-col">
+            <AdminInput label="Bracket side" value={form.bracket_side || ''} onChange={(value) => setField('bracket_side', value)} />
+            <AdminInput label="Loser to slot" value={form.loser_to_slot || ''} onChange={(value) => setField('loser_to_slot', value)} />
           </div>
           <AdminInput label="Venue" value={form.venue || ''} onChange={(value) => setField('venue', value)} />
           <label>
@@ -2618,6 +2760,9 @@ function AdminTools({
           <div className="button-row">
             <button onClick={() => runManualSync('prematch')} disabled={Boolean(syncing)}>
               {syncing === 'prematch' ? 'Syncing insights...' : 'Sync insights'}
+            </button>
+            <button onClick={() => runManualSync('bracket')} disabled={Boolean(syncing)}>
+              {syncing === 'bracket' ? 'Syncing bracket...' : 'Sync bracket'}
             </button>
             <button onClick={() => runManualSync('live')} disabled={Boolean(syncing)}>
               {syncing === 'live' ? 'Syncing live...' : 'Sync live/recaps'}
@@ -2717,6 +2862,37 @@ function FamilyStatsPanel({ tournament, players, matches, predictions, favorites
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+function BracketHealthPanel({ matches }) {
+  const health = getBracketHealth(matches);
+  if (!health.total) return null;
+  const issueCount = health.missingSlots + health.duplicateSlots.length + health.missingNextLinks + health.unpublished + health.missingOfficialData;
+
+  return (
+    <section className="panel bracket-health-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Knockout bracket health</h2>
+          <p className="muted">Checks bracket metadata on knockout matches before the tree goes live.</p>
+        </div>
+        <span className={issueCount ? 'health-pill warning' : 'health-pill ok'}>
+          {issueCount ? `${issueCount} issue${issueCount === 1 ? '' : 's'}` : 'Ready'}
+        </span>
+      </div>
+      <div className="clone-kpis">
+        <span><strong>{health.total}</strong> knockout</span>
+        <span><strong>{health.missingSlots}</strong> missing slots</span>
+        <span><strong>{health.duplicateSlots.length}</strong> duplicate slots</span>
+        <span><strong>{health.missingNextLinks}</strong> missing next links</span>
+        <span><strong>{health.unpublished}</strong> unpublished</span>
+        <span><strong>{health.missingOfficialData}</strong> missing official data</span>
+      </div>
+      {health.duplicateSlots.length > 0 && (
+        <p className="muted">Duplicate slots: {health.duplicateSlots.join(', ')}</p>
+      )}
     </section>
   );
 }
@@ -3449,7 +3625,7 @@ function normalizeRoute(value) {
 
 function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
-  return ['/', '/matches', '/predictions', '/groups', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
+  return ['/', '/matches', '/predictions', '/groups', '/bracket', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
 }
 
 function getRouteGroupSlug(route) {
@@ -3587,6 +3763,10 @@ function getLiveScore(match) {
   const scoreB = match.live_team_b_score ?? (match.status === 'live' ? match.team_b_score : null);
   if (scoreA === null || scoreA === undefined || scoreB === null || scoreB === undefined) return '';
   return `${scoreA} - ${scoreB}`;
+}
+
+function isBracketSourceLabel(value) {
+  return /^(tbd|winner |runner-up |best 3rd |loser )/i.test(String(value || '').trim());
 }
 
 function formatPredictionScore(prediction) {

@@ -4,8 +4,9 @@ import { getActiveTournament, getRequiredServerEnv } from './api-football.js';
 import { refreshLinkedClonesForSource } from './clone-groups.js';
 import { runLiveScoreSync } from './sync-live-scores.js';
 import { runPrematchSync } from './sync-prematch-data.js';
+import { runBracketSync } from './sync-bracket-data.js';
 
-const SYNC_TYPES = new Set(['prematch', 'live', 'all']);
+const SYNC_TYPES = new Set(['prematch', 'live', 'bracket', 'all']);
 
 export default async function handler(request, response) {
   if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed.' });
@@ -17,8 +18,9 @@ export default async function handler(request, response) {
     const result = {};
 
     if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematchSync();
+    if (sync === 'bracket' || sync === 'all') result.bracket = await runBracketSync();
     if (sync === 'live' || sync === 'all') result.live = await runLiveScoreSync();
-    result.clones = result.live?.clones || result.prematch?.clones || await refreshLinkedClones();
+    result.clones = result.live?.clones || result.prematch?.clones || result.bracket?.clones || await refreshLinkedClones();
 
     return response.status(200).json({ sync, ...result });
   } catch (error) {

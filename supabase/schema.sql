@@ -64,6 +64,12 @@ create table if not exists public.matches (
   venue text,
   group_name text,
   stage text,
+  bracket_round text,
+  bracket_slot text,
+  bracket_side text,
+  winner_to_slot text,
+  winner_to_side text,
+  loser_to_slot text,
   team_a_score integer check (team_a_score is null or team_a_score >= 0),
   team_b_score integer check (team_b_score is null or team_b_score >= 0),
   status text default 'scheduled' check (status in ('scheduled', 'live', 'finished')),
@@ -85,6 +91,12 @@ alter table public.tournaments add column if not exists source_tournament_id uui
 alter table public.tournaments add column if not exists parent_tournament_id uuid references public.tournaments(id) on delete set null;
 alter table public.tournaments add column if not exists last_internal_refresh_at timestamp with time zone;
 alter table public.matches add column if not exists source_match_id uuid references public.matches(id) on delete set null;
+alter table public.matches add column if not exists bracket_round text;
+alter table public.matches add column if not exists bracket_slot text;
+alter table public.matches add column if not exists bracket_side text;
+alter table public.matches add column if not exists winner_to_slot text;
+alter table public.matches add column if not exists winner_to_side text;
+alter table public.matches add column if not exists loser_to_slot text;
 do $$
 begin
   if exists (
@@ -265,6 +277,9 @@ create index if not exists idx_matches_kickoff_time on public.matches (kickoff_t
 create index if not exists idx_matches_published on public.matches (is_published);
 create index if not exists idx_matches_external_match_id on public.matches (external_match_id);
 create index if not exists idx_matches_live_source_match_id on public.matches (live_source_match_id);
+create index if not exists idx_matches_bracket_round on public.matches (bracket_round);
+create index if not exists idx_matches_bracket_slot on public.matches (tournament_id, bracket_slot)
+where bracket_slot is not null;
 create index if not exists idx_predictions_player_id on public.predictions (player_id);
 create index if not exists idx_predictions_match_id on public.predictions (match_id);
 create index if not exists idx_predictions_tournament_id on public.predictions (tournament_id);
