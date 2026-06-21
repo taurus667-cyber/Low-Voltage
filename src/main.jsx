@@ -2546,6 +2546,13 @@ function AdminTools({
   return (
     <section>
       <PageTitle title="Admin" action={<button onClick={refresh}>Refresh</button>} />
+      <FamilyStatsPanel
+        tournament={tournament}
+        players={players}
+        matches={matches}
+        predictions={predictions}
+        favorites={scopedRows(allTeamFavorites, tournament)}
+      />
       <CloneGroupsPanel
         tournaments={tournaments}
         sourceTournaments={sourceTournaments}
@@ -2666,6 +2673,49 @@ function AdminTools({
             </div>
           </article>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function FamilyStatsPanel({ tournament, players, matches, predictions, favorites }) {
+  const stats = getFamilyKpis({ players, matches, predictions, favorites });
+  const topSubmitters = stats.topSubmitters.slice(0, 5);
+
+  return (
+    <section className="panel family-stats-panel">
+      <div className="section-heading">
+        <div>
+          <h2>{tournament?.name || 'Family app'} stats</h2>
+          <p className="muted">Current users and prediction activity for this app.</p>
+        </div>
+      </div>
+      <div className="clone-kpis family-kpis">
+        <span><strong>{stats.players}</strong> players</span>
+        <span><strong>{stats.activePlayers}</strong> active</span>
+        <span><strong>{stats.inactivePlayers}</strong> inactive</span>
+        <span><strong>{stats.playersWithPicks}</strong> with picks</span>
+        <span><strong>{stats.playersWithoutPicks}</strong> no picks</span>
+        <span><strong>{stats.predictions}</strong> picks</span>
+        <span><strong>{stats.avgPicksPerActive}</strong> avg / active</span>
+        <span><strong>{stats.favorites}</strong> favorites</span>
+        <span><strong>{stats.publishedMatches}</strong> published</span>
+        <span><strong>{stats.openMatches}</strong> open</span>
+        <span><strong>{stats.completedMatches}</strong> completed</span>
+        <span><strong>{stats.lockedMatches}</strong> locked</span>
+      </div>
+      <div className="family-stats-detail">
+        <p className="muted">Last activity: {stats.lastActivity ? formatDate(stats.lastActivity) : 'No player activity yet'}</p>
+        {topSubmitters.length > 0 && (
+          <div>
+            <strong>Top submitters</strong>
+            <div className="submitted-list">
+              {topSubmitters.map((row) => (
+                <span key={row.player.id}>{getPlayerDisplayName(row.player)} · {row.count} pick{row.count === 1 ? '' : 's'}</span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2896,6 +2946,37 @@ function AdminPlayersPanel({ tournament, players, predictions, matches, refresh,
       </div>
     </section>
   );
+}
+
+function getFamilyKpis({ players = [], matches = [], predictions = [], favorites = [] }) {
+  const activePlayers = players.filter(isPlayerActive);
+  const predictionCounts = countBy(predictions, 'player_id');
+  const playersWithPicks = activePlayers.filter((player) => (predictionCounts.get(player.id) || 0) > 0);
+  const topSubmitters = [...activePlayers]
+    .map((player) => ({ player, count: predictionCounts.get(player.id) || 0 }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count || getPlayerDisplayName(a.player).localeCompare(getPlayerDisplayName(b.player)));
+
+  return {
+    players: players.length,
+    activePlayers: activePlayers.length,
+    inactivePlayers: players.length - activePlayers.length,
+    playersWithPicks: playersWithPicks.length,
+    playersWithoutPicks: Math.max(activePlayers.length - playersWithPicks.length, 0),
+    predictions: predictions.length,
+    avgPicksPerActive: activePlayers.length ? (predictions.length / activePlayers.length).toFixed(1) : '0.0',
+    favorites: favorites.length,
+    publishedMatches: matches.filter((match) => match.is_published).length,
+    openMatches: matches.filter((match) => match.is_published && !isMatchLocked(match)).length,
+    completedMatches: matches.filter(isFinalScoreComplete).length,
+    lockedMatches: matches.filter(isMatchLocked).length,
+    topSubmitters,
+    lastActivity: latestTimestamp([
+      ...players.map((player) => player.created_at),
+      ...predictions.map((prediction) => prediction.updated_at || prediction.submitted_at),
+      ...favorites.map((favorite) => favorite.created_at),
+    ]),
+  };
 }
 
 function Top10CodesPanel({ tournament, setMessage, setError }) {

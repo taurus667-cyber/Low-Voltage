@@ -1759,7 +1759,8 @@ th {
   align-items: start;
 }
 
-.clone-panel {
+.clone-panel,
+.family-stats-panel {
   margin-bottom: 1rem;
 }
 
@@ -1923,6 +1924,24 @@ th {
 
 .clone-kpis strong {
   color: #0f766e;
+}
+
+.family-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+}
+
+.family-stats-detail {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.family-stats-detail p {
+  margin: 0;
+}
+
+.family-stats-detail > div {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .toggle-row,
