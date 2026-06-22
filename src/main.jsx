@@ -984,25 +984,20 @@ function PredictionCard({
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from('predictions').upsert(
-        {
-          player_id: player.id,
-          match_id: match.id,
-          ...((match.tournament_id || tournament?.id) ? { tournament_id: match.tournament_id || tournament.id } : {}),
-          predicted_team_a_score: scoreA,
-          predicted_team_b_score: scoreB,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'player_id,match_id' },
-      );
-      throwIfError(error);
+      const savedPrediction = await savePrediction({
+        player,
+        match,
+        tournament,
+        scoreA,
+        scoreB,
+      });
       setLocalSavedPrediction({
-        id: prediction?.id || `local-${player.id}-${match.id}`,
+        id: savedPrediction?.id || prediction?.id || `local-${player.id}-${match.id}`,
         player_id: player.id,
         match_id: match.id,
         predicted_team_a_score: scoreA,
         predicted_team_b_score: scoreB,
-        submitted_at: prediction?.submitted_at || new Date().toISOString(),
+        submitted_at: savedPrediction?.submitted_at || prediction?.submitted_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
       setLocalStatus({ type: 'success', text: `Prediction saved: ${scoreA}-${scoreB}` });
@@ -3831,6 +3826,47 @@ async function runAdminPlayersRequest(body) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'Player admin request failed.');
   return payload;
+}
+
+async function savePrediction({ player, match, tournament, scoreA, scoreB }) {
+  const now = new Date().toISOString();
+  const payload = {
+    player_id: player.id,
+    match_id: match.id,
+    ...((match.tournament_id || tournament?.id) ? { tournament_id: match.tournament_id || tournament.id } : {}),
+    predicted_team_a_score: scoreA,
+    predicted_team_b_score: scoreB,
+    updated_at: now,
+  };
+
+  const existingResponse = await supabase
+    .from('predictions')
+    .select('id,submitted_at')
+    .eq('player_id', player.id)
+    .eq('match_id', match.id)
+    .order('submitted_at', { ascending: true })
+    .limit(1);
+  throwIfError(existingResponse.error);
+
+  const existing = existingResponse.data?.[0] || null;
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from('predictions')
+      .update(payload)
+      .eq('id', existing.id)
+      .select('id,submitted_at')
+      .single();
+    throwIfError(error);
+    return data || existing;
+  }
+
+  const { data, error } = await supabase
+    .from('predictions')
+    .insert({ ...payload, submitted_at: now })
+    .select('id,submitted_at')
+    .single();
+  throwIfError(error);
+  return data;
 }
 
 function createTop10Celebration({ player, code, status, firstReveal = false }) {
