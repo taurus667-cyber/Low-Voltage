@@ -25,6 +25,9 @@ export async function runBracketSync() {
   const now = new Date().toISOString();
   const rows = OFFICIAL_KNOCKOUT_PLACEHOLDERS.map((slot) => {
     const existing = existingRows.get(slot.bracket_slot) || existingRows.get(slot.external_match_id);
+    const teamA = keepRealTeam(existing?.team_a, slot.team_a);
+    const teamB = keepRealTeam(existing?.team_b, slot.team_b);
+    const hasConcreteTeams = !isPlaceholderTeam(teamA) && !isPlaceholderTeam(teamB);
     return {
       tournament_id: tournament.id || null,
       external_match_id: slot.external_match_id,
@@ -35,13 +38,13 @@ export async function runBracketSync() {
       winner_to_side: slot.winner_to_side || null,
       loser_to_slot: slot.loser_to_slot || null,
       stage: slot.stage,
-      team_a: keepRealTeam(existing?.team_a, slot.team_a),
-      team_b: keepRealTeam(existing?.team_b, slot.team_b),
+      team_a: teamA,
+      team_b: teamB,
       kickoff_time: existing?.kickoff_time || slot.kickoff_time,
       venue: keepRealVenue(existing?.venue, slot.venue),
       status: existing?.status || 'scheduled',
       is_locked: existing?.is_locked || false,
-      is_published: true,
+      is_published: hasConcreteTeams ? existing?.is_published !== false : false,
       team_a_score: existing?.team_a_score ?? null,
       team_b_score: existing?.team_b_score ?? null,
       live_source_match_id: existing?.live_source_match_id || null,
@@ -65,6 +68,7 @@ export async function runBracketSync() {
     inserted: writeCounts.inserted,
     updated: writeCounts.updated,
     placeholders: rows.filter((row) => isPlaceholderTeam(row.team_a) || isPlaceholderTeam(row.team_b)).length,
+    hiddenPlaceholders: rows.filter((row) => row.is_published === false).length,
     clones,
   };
 }
