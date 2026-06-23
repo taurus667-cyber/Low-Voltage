@@ -4,6 +4,7 @@ import {
   isMatchLive,
   isMatchPlayed,
   isMatchUpcoming,
+  isPlayerFacingMatch,
 } from './matches.js';
 
 const NOW = new Date('2026-06-12T20:00:00Z').getTime();
@@ -48,4 +49,26 @@ test('old post-kickoff unfinished match moves to played after active window', ()
   const row = match({ kickoff_time: '2026-06-12T16:30:00Z' });
   assert.equal(isMatchLive(row, NOW), false);
   assert.equal(isMatchPlayed(row, NOW), true);
+});
+
+test('hides published knockout placeholders from player-facing match lists', () => {
+  const row = match({
+    is_published: true,
+    stage: 'Round of 32',
+    bracket_round: 'round-of-32',
+    team_a: 'Winner Group A',
+    team_b: 'Runner-up Group C',
+  });
+  assert.equal(isPlayerFacingMatch(row), false);
+});
+
+test('keeps published knockout fixtures once both teams are concrete', () => {
+  const row = match({
+    is_published: true,
+    stage: 'Round of 32',
+    bracket_round: 'round-of-32',
+    team_a: 'Argentina',
+    team_b: 'Brazil',
+  });
+  assert.equal(isPlayerFacingMatch(row), true);
 });

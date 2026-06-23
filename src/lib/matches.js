@@ -1,4 +1,5 @@
 import { isFinalScoreComplete } from './scoring.js';
+import { isKnockoutMatch, isPlaceholderTeam } from './bracket.js';
 
 export const LIVE_MATCH_WINDOW_MINUTES = 150;
 
@@ -34,6 +35,12 @@ export function isMatchPlayed(match, now = Date.now()) {
 
 export function isMatchFinished(match) {
   return match.status === 'finished' || (match.status !== 'live' && isFinalScoreComplete(match));
+}
+
+export function isPlayerFacingMatch(match) {
+  if (!match?.is_published) return false;
+  if (!isKnockoutMatch(match)) return true;
+  return !isPlaceholderTeam(match.team_a) && !isPlaceholderTeam(match.team_b);
 }
 
 export function getMatchLockReason(match, now = Date.now()) {

@@ -74,6 +74,10 @@ export function isKnockoutMatch(match) {
   return /(knockout|round of|quarter|semi|final|third.?place|3rd.?place)/i.test(match?.stage || '');
 }
 
+export function isPlaceholderTeam(value) {
+  return /^(tbd|winner\b|runner-up\b|best 3rd\b|loser\b)/i.test(String(value || '').trim());
+}
+
 export function getBracketRoundMeta(roundKey) {
   return ROUND_BY_KEY.get(normalizeBracketRound(roundKey)) || null;
 }

@@ -11,6 +11,7 @@ import {
   isMatchLive,
   isMatchLocked,
   isMatchPlayed,
+  isPlayerFacingMatch,
   isMatchUpcoming,
 } from './lib/matches.js';
 import {
@@ -676,7 +677,7 @@ function MatchesPage({
   tournament,
 }) {
   const [matchView, setMatchView] = useState('upcoming');
-  const publishedMatches = useMemo(() => matches.filter((match) => match.is_published), [matches]);
+  const publishedMatches = useMemo(() => matches.filter(isPlayerFacingMatch), [matches]);
   const currentPlayer = players.find((item) => item.id === player?.id) || player;
   const playersById = useMemo(() => new Map(players.map((item) => [item.id, item])), [players]);
   const predictionsByMatch = useMemo(() => {
@@ -2135,7 +2136,7 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
     return map;
   }, [predictions, playersById]);
 
-  const publishedMatches = matches.filter((match) => match.is_published);
+  const publishedMatches = matches.filter(isPlayerFacingMatch);
   const liveMatches = useMemo(
     () =>
       publishedMatches
