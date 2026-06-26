@@ -310,6 +310,70 @@ h2 {
   padding: 0.85rem;
 }
 
+.profile-steps {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid #d5e4df;
+  border-radius: 8px;
+  background: #f8fbfa;
+  padding: 0.75rem;
+  color: #55726b;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.profile-steps span.active {
+  color: #0f766e;
+}
+
+.entry-notice,
+.profile-action-card {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid #b8d8cf;
+  border-radius: 8px;
+  background: #eef8f5;
+  color: #10201c;
+  padding: 0.85rem;
+}
+
+.entry-notice span,
+.profile-action-card span {
+  color: #405852;
+}
+
+.entry-notice.warning,
+.profile-action-card.warning {
+  border-color: #e8d28a;
+  background: #fff9df;
+}
+
+.entry-notice.error {
+  border-color: #f0b3aa;
+  background: #fff0ee;
+  color: #8d241c;
+}
+
+.profile-choice-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.profile-choice-button span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.profile-choice-button small,
+.profile-choice-button em {
+  color: #55726b;
+  font-size: 0.82rem;
+}
+
 .name-update-confirm {
   display: grid;
   gap: 0.45rem;
@@ -1911,6 +1975,236 @@ th {
   color: #372600;
 }
 
+.stats-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.stats-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.stats-hero h1 {
+  margin-bottom: 0.35rem;
+  font-size: clamp(2.2rem, 7vw, 4.4rem);
+}
+
+.stats-rank-card,
+.stats-kpi-card,
+.best-result-card {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid #cfe0da;
+  border-radius: 8px;
+  background: #f7fbf9;
+  color: #315b52;
+  padding: 0.85rem;
+}
+
+.stats-rank-card {
+  min-width: 170px;
+  background: #fff7dc;
+  border-color: #efcf6b;
+}
+
+.stats-rank-card span,
+.stats-kpi-card span,
+.best-result-card span {
+  color: #63766f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.stats-rank-card strong,
+.stats-kpi-card strong,
+.best-result-card strong {
+  color: #102a27;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.stats-rank-card em,
+.stats-kpi-card em,
+.best-result-card em {
+  color: #55726b;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.stats-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.stats-kpi-card {
+  background: #ffffff;
+}
+
+.stats-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.stats-comparison-panel,
+.stats-form-panel,
+.stats-code-panel {
+  align-content: start;
+}
+
+.comparison-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.comparison-row > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #55726b;
+  font-size: 0.9rem;
+}
+
+.comparison-row strong {
+  color: #102a27;
+}
+
+.comparison-bars {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.comparison-bars span {
+  display: block;
+  height: 0.42rem;
+  border-radius: 999px;
+}
+
+.comparison-bars .you {
+  background: #0f766e;
+}
+
+.comparison-bars .average {
+  background: #b7ccc5;
+}
+
+.stats-distance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.stats-distance-grid span {
+  border-radius: 8px;
+  background: #eef7f4;
+  color: #315b52;
+  padding: 0.55rem;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.stats-distance-grid strong {
+  color: #0f766e;
+}
+
+.form-chip-list,
+.upcoming-gap-list,
+.nearby-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.form-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #d6e4df;
+  border-radius: 999px;
+  background: #f7fbf9;
+  color: #315b52;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.form-chip strong {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: #e3eeea;
+  color: #315b52;
+}
+
+.form-chip.points-3 {
+  border-color: #9dd6bf;
+  background: #e9f8ef;
+}
+
+.form-chip.points-3 strong {
+  background: #17613c;
+  color: #ffffff;
+}
+
+.form-chip.points-0 {
+  background: #f4f7f6;
+}
+
+.best-result-card {
+  margin-top: 0.75rem;
+}
+
+.nearby-list div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.65rem;
+}
+
+.nearby-list div.current {
+  border-color: #0f766e;
+  background: #eef8f5;
+}
+
+.nearby-list span,
+.nearby-list em {
+  color: #63766f;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.nearby-list strong {
+  color: #102a27;
+  overflow-wrap: anywhere;
+}
+
+.upcoming-gap-list button {
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  text-align: left;
+}
+
+.upcoming-gap-list span {
+  color: #63766f;
+  font-size: 0.86rem;
+}
+
+.stats-code-panel .top10-code-display {
+  font-size: clamp(2rem, 9vw, 3.4rem);
+}
+
 .admin-login {
   width: min(480px, 100%);
   display: grid;
@@ -2272,6 +2566,8 @@ th {
 
   .hero,
   .admin-grid,
+  .stats-hero,
+  .stats-layout,
   .clone-create-grid,
   .admin-player-merge,
   .merge-summary,
@@ -2290,6 +2586,7 @@ th {
 
   .score-row,
   .two-col,
+  .stats-distance-grid,
   .help-actions,
   .help-grid,
   .help-link-list {
@@ -2350,6 +2647,10 @@ th {
   .bracket-node-meta,
   .bracket-node-foot {
     display: grid;
+  }
+
+  .profile-choice-button {
+    grid-template-columns: 1fr;
   }
 
   .nation-logo {

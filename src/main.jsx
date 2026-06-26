@@ -24,6 +24,13 @@ import { getMatchesRefreshInterval } from './lib/polling.js';
 import { normalizeName, teamIdentity, slugifyTeamName } from './lib/teamMetadata.js';
 import { groupKeyEvents, splitMatchEvents } from './lib/matchEvents.js';
 import { normalizePlayerName, validatePlayerFullName } from './lib/playerNames.js';
+import {
+  getProfileEntryState,
+  getProfilePickHint,
+  getRenameSummary,
+  PROFILE_ENTRY_MODES,
+} from './lib/profileEntryFlow.js';
+import { buildPlayerStats } from './lib/playerStats.js';
 import { selectAllRows } from './lib/supabasePaging.js';
 import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
 import './styles.css';
@@ -165,7 +172,7 @@ function App() {
     try {
       const protection = top10Protection?.code && top10Protection.playerId === player?.id ? top10Protection : await loadTop10Protection();
       if (!protection?.code) {
-        navigate(buildRoute(routeBase, '/top10-code'));
+        navigate(buildRoute(routeBase, '/stats'));
         return;
       }
       setTop10Celebration(createTop10Celebration({
@@ -293,11 +300,6 @@ function App() {
         <button className={`help-link ${pageRoute === '/help' ? 'active' : ''}`} onClick={() => navigate(buildRoute(routeBase, '/help'))}>
           Help
         </button>
-        {top10Protection?.protected && (
-          <button className={pageRoute === '/top10-code' ? 'help-link active' : 'help-link'} onClick={() => navigate(buildRoute(routeBase, '/top10-code'))}>
-            My code
-          </button>
-        )}
         {currentTop10Status && (
           <button
             className={`top10-badge ${currentTop10Status.status_key === 'leader' ? 'leader' : ''}`}
@@ -312,6 +314,9 @@ function App() {
           </button>
           <button className={pageRoute === '/predictions' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/predictions'))}>
             Picks
+          </button>
+          <button className={pageRoute === '/stats' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/stats'))}>
+            My Stats
           </button>
           <button className={pageRoute === '/groups' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/groups'))}>
             Groups
@@ -343,6 +348,7 @@ function App() {
         {pageRoute === '/' && <HomePage {...pageProps} />}
         {pageRoute === '/matches' && <MatchesPage {...pageProps} />}
         {pageRoute === '/predictions' && <PredictionsPage {...pageProps} />}
+        {pageRoute === '/stats' && <StatsPage {...pageProps} storedPlayer={player} />}
         {pageRoute === '/groups' && <GroupsPage {...pageProps} />}
         {pageRoute === '/bracket' && <BracketPage {...pageProps} />}
         {pageRoute === '/favorites' && <FavoritesPage {...pageProps} />}
@@ -368,6 +374,7 @@ function HomePage({
   setPlayers,
   players,
   refresh,
+  predictions,
   setMessage,
   setError,
   navigate,
@@ -379,56 +386,87 @@ function HomePage({
 }) {
   const [name, setName] = useState(player?.name || '');
   const [matches, setMatches] = useState([]);
-  const [entryError, setEntryError] = useState('');
+  const [entryMode, setEntryMode] = useState(PROFILE_ENTRY_MODES.ENTER_NAME);
+  const [entryNotice, setEntryNotice] = useState(null);
   const [upgradePlayer, setUpgradePlayer] = useState(null);
   const [protectedClaim, setProtectedClaim] = useState(null);
   const [top10Code, setTop10Code] = useState('');
+  const predictionCounts = useMemo(() => countBy(predictions, 'player_id'), [predictions]);
   const upgradeNameValidation = upgradePlayer ? validatePlayerFullName(name) : null;
   const upgradeTargetName = upgradeNameValidation?.valid ? upgradeNameValidation.name : '';
-  const upgradeHelpText = 'Add the last name, then use the update button. This keeps the same profile and saved picks.';
+  const renameSummary = upgradePlayer && upgradeTargetName
+    ? getRenameSummary({
+      currentName: upgradePlayer.name,
+      newName: upgradeTargetName,
+      willRevealCode: protectedClaim?.action === 'rename' && !top10Code,
+    })
+    : null;
+
+  const showNotice = (type, title, text) => setEntryNotice({ type, title, text });
+  const resetEntryGuidance = () => {
+    setEntryMode(PROFILE_ENTRY_MODES.ENTER_NAME);
+    setEntryNotice(null);
+  };
+  const beginUpgrade = (existing) => {
+    setMessage('');
+    setError('');
+    setUpgradePlayer(existing);
+    setName(`${existing.name} `);
+    setMatches([]);
+    setProtectedClaim(null);
+    setTop10Code('');
+    setEntryMode(PROFILE_ENTRY_MODES.CONFIRM_RENAME);
+    showNotice(
+      'info',
+      `We found your existing profile: ${existing.name}`,
+      'Add your last name to keep the same profile, saved picks, leaderboard history, and Top 10 status.',
+    );
+  };
 
   const savePlayer = async (mode = 'auto') => {
     if (mode.startsWith('existing:')) {
       const existingId = mode.replace('existing:', '');
       const existing = players.find((item) => item.id === existingId && isPlayerActive(item));
       if (existing && !validatePlayerFullName(existing.name).valid) {
-        setMessage('');
-        setError('');
-        setUpgradePlayer(existing);
-        setName(`${existing.name} `);
-        setMatches([]);
-        setProtectedClaim(null);
-        setTop10Code('');
-        setEntryError(upgradeHelpText);
+        beginUpgrade(existing);
         return;
       }
     }
 
-    const nameValidation = validatePlayerFullName(name);
+    const entryState = getProfileEntryState({ inputName: name, players });
+    const nameValidation = entryState.validation;
     const cleanName = nameValidation.name;
     setMessage('');
     setError('');
-    setEntryError('');
+    setEntryNotice(null);
     if (!nameValidation.valid) {
-      const singleNameMatches = players.filter(
-        (item) => isPlayerActive(item) && normalizePlayerName(item.name) === normalizePlayerName(cleanName),
-      );
+      const singleNameMatches = entryState.matches;
       if (singleNameMatches.length) {
         setMatches(singleNameMatches);
         setProtectedClaim(null);
-        setEntryError('This existing profile uses one name. Choose it below, then add your last name to keep your picks.');
+        setEntryMode(PROFILE_ENTRY_MODES.SINGLE_NAME_FOUND);
+        showNotice(
+          'info',
+          `We found your existing profile: ${singleNameMatches[0].name}`,
+          'Choose the profile below, then add your last name. This updates the same profile instead of creating a new one.',
+        );
         return;
       }
-      setEntryError(nameValidation.message);
+      setEntryMode(PROFILE_ENTRY_MODES.ENTER_NAME);
+      showNotice('warning', 'Full name needed', nameValidation.message);
       return;
     }
 
-    const sameName = players.filter(
-      (item) => isPlayerActive(item) && normalizePlayerName(item.name) === normalizePlayerName(cleanName),
-    );
+    const sameName = entryState.matches;
     if (sameName.length && mode === 'auto') {
       setMatches(sameName);
       setProtectedClaim(null);
+      setEntryMode(PROFILE_ENTRY_MODES.EXISTING_PROFILE_FOUND);
+      showNotice(
+        'info',
+        'A profile already exists with this full name',
+        'Use the existing profile to keep its saved picks, or enter a different first and last name.',
+      );
       return;
     }
 
@@ -443,7 +481,12 @@ function HomePage({
         if (duplicateFullName) {
           setMatches([duplicateFullName]);
           setProtectedClaim(null);
-          setEntryError('That full name is already registered. Use the existing profile or choose a clearer full name.');
+          setEntryMode(PROFILE_ENTRY_MODES.EXISTING_PROFILE_FOUND);
+          showNotice(
+            'warning',
+            'A profile already exists with this full name',
+            'Choose the existing profile below or enter a different full name before updating.',
+          );
           return;
         }
 
@@ -482,11 +525,7 @@ function HomePage({
         const existing = players.find((item) => item.id === existingId && isPlayerActive(item));
         if (!existing) throw new Error('That player was not found.');
         if (!validatePlayerFullName(existing.name).valid) {
-          setUpgradePlayer(existing);
-          setName(`${existing.name} `);
-          setMatches([]);
-          setProtectedClaim(null);
-          setEntryError(upgradeHelpText);
+          beginUpgrade(existing);
           return;
         }
         if (protectedClaim?.player?.id === existing.id) {
@@ -514,7 +553,12 @@ function HomePage({
           if (status.requiresCode) {
             setProtectedClaim({ player: existing });
             setTop10Code('');
-            setEntryError(`${existing.name} has Top 10 protection. Enter the 4-character code to continue with this profile.`);
+            setEntryMode(PROFILE_ENTRY_MODES.PROTECTED_CODE_REQUIRED);
+            showNotice(
+              'warning',
+              'This profile is protected',
+              `Enter the 4-character code to prove ${existing.name} is your profile before continuing.`,
+            );
             return;
           }
         }
@@ -543,20 +587,25 @@ function HomePage({
       navigate(buildRoute(routeBase, '/matches'));
     } catch (err) {
       if (isUniqueViolation(err)) {
-        setEntryError('That display name is already registered. Use the existing profile.');
+        setEntryMode(PROFILE_ENTRY_MODES.EXISTING_PROFILE_FOUND);
+        showNotice('warning', 'That name is already registered', 'Use the existing profile below or enter a different full name.');
         await refresh();
         return;
       }
       if (upgradePlayer && /top 10 code/i.test(err.message || '')) {
         setProtectedClaim({ player: upgradePlayer, action: 'rename' });
-        setEntryError(
+        setEntryMode(PROFILE_ENTRY_MODES.PROTECTED_CODE_REQUIRED);
+        showNotice(
+          /incorrect/i.test(err.message || '') ? 'error' : 'warning',
+          /incorrect/i.test(err.message || '') ? 'Incorrect Top 10 code' : 'This profile is protected',
           /incorrect/i.test(err.message || '')
-            ? 'That Top 10 code is incorrect. Check the 4-character code and try again.'
-            : `${upgradePlayer.name} has Top 10 protection. Enter the 4-character code to update this profile.`,
+            ? 'Check the 4-character code and try again.'
+            : `Enter the 4-character code to update ${upgradePlayer.name} without losing picks.`,
         );
         return;
       }
-      setEntryError(err.message || 'Could not save player.');
+      setEntryMode(PROFILE_ENTRY_MODES.SAVE_ERROR);
+      showNotice('error', 'Could not save profile', err.message || 'Could not save player.');
     }
   };
 
@@ -564,12 +613,9 @@ function HomePage({
     const nameValidation = validatePlayerFullName(player?.name || '');
     setMessage('');
     setError('');
-    setEntryError('');
+    setEntryNotice(null);
     if (!nameValidation.valid) {
-      setUpgradePlayer(player);
-      setName(`${player.name} `);
-      setProtectedClaim(null);
-      setEntryError(upgradeHelpText);
+      beginUpgrade(player);
       return;
     }
     navigate(buildRoute(routeBase, '/matches'));
@@ -585,6 +631,7 @@ function HomePage({
         </p>
       </div>
       <div className="entry-panel">
+        <ProfileEntrySteps mode={entryMode} />
         <label htmlFor="player-name">Full name</label>
         <input
           id="player-name"
@@ -594,14 +641,23 @@ function HomePage({
             setMatches([]);
             setProtectedClaim(null);
             setTop10Code('');
-            setEntryError(upgradePlayer ? upgradeHelpText : '');
+            if (upgradePlayer) {
+              setEntryMode(PROFILE_ENTRY_MODES.CONFIRM_RENAME);
+              showNotice(
+                'info',
+                `We found your existing profile: ${upgradePlayer.name}`,
+                'Review the new full name below before updating this profile.',
+              );
+            } else {
+              resetEntryGuidance();
+            }
           }}
           placeholder="First Last"
           maxLength={40}
         />
         {upgradePlayer && (
           <div className="name-update-confirm" aria-live="polite">
-            <strong>Updating existing profile</strong>
+            <strong>{renameSummary?.title || 'Update existing profile'}</strong>
             <span>
               Current name: <b>{upgradePlayer.name}</b>
             </span>
@@ -610,29 +666,41 @@ function HomePage({
                 New name: <b>{upgradeTargetName}</b>
               </span>
             )}
-            <small>Your saved picks stay with this same profile.</small>
+            <small>{renameSummary?.body || 'Your saved picks stay with this same profile.'}</small>
+            <small>If this profile is Top 10 protected, we may show your private code after the update. Save it.</small>
+            {renameSummary?.codeNote && <small>{renameSummary.codeNote}</small>}
           </div>
         )}
         <button className="primary" onClick={() => savePlayer()}>
-          {upgradePlayer && upgradeNameValidation?.valid ? `Update ${upgradePlayer.name} to ${upgradeTargetName}` : 'Continue'}
+          {getPrimaryProfileButtonLabel({ upgradePlayer, upgradeNameValidation, upgradeTargetName, protectedClaim })}
         </button>
-        {entryError && <p className="entry-error" role="alert">{entryError}</p>}
+        {entryNotice && <EntryNotice notice={entryNotice} />}
         {protectedClaim && (
-          <div className="duplicate-box">
-            <strong>Top 10 protected profile</strong>
+          <div className="profile-action-card warning">
+            <strong>{protectedClaim.action === 'rename' ? 'Protected name update' : 'Top 10 protected profile'}</strong>
             <span>
               {protectedClaim.action === 'rename'
-                ? `Enter the code for ${protectedClaim.player.name} to update this protected profile without losing picks.`
-                : `Enter the code for ${protectedClaim.player.name} to keep using the existing profile and saved picks.`}
+                ? `Enter the code for ${protectedClaim.player.name} to update this protected profile. Your picks and leaderboard history stay attached.`
+                : `Enter the code for ${protectedClaim.player.name} to prove this is your profile before continuing.`}
             </span>
             <input
+              aria-label="Top 10 code"
               value={top10Code}
               onChange={(event) => setTop10Code(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
               placeholder="A7K2"
               maxLength={4}
             />
             <button onClick={() => (protectedClaim.action === 'rename' ? savePlayer() : savePlayer(`existing:${protectedClaim.player.id}`))}>
-              {protectedClaim.action === 'rename' ? `Update ${protectedClaim.player.name} with code` : `Unlock ${protectedClaim.player.name}`}
+              {protectedClaim.action === 'rename' ? 'Update name with code' : 'Unlock profile'}
+            </button>
+            <button className="ghost" onClick={() => {
+              setProtectedClaim(null);
+              setTop10Code('');
+              setUpgradePlayer(null);
+              setMatches([]);
+              resetEntryGuidance();
+            }}>
+              Try another name
             </button>
           </div>
         )}
@@ -642,19 +710,76 @@ function HomePage({
           </button>
         )}
         {matches.length > 0 && (
-          <div className="duplicate-box">
-            <strong>Name already exists.</strong>
-            <span>Use the existing profile for this name. If it has only one name, you can add the last name without losing picks.</span>
+          <div className="profile-action-card">
+            <strong>{entryMode === PROFILE_ENTRY_MODES.SINGLE_NAME_FOUND ? 'We found your existing single-name profile' : 'A profile already exists with this full name'}</strong>
+            <span>
+              {entryMode === PROFILE_ENTRY_MODES.SINGLE_NAME_FOUND
+                ? 'Choose the profile below, then add your last name. This keeps the same saved picks and leaderboard history.'
+                : 'Choose the existing profile to keep its saved picks, or enter a different first and last name.'}
+            </span>
             {matches.map((item) => (
-              <button key={item.id} onClick={() => savePlayer(`existing:${item.id}`)}>
-                {validatePlayerFullName(item.name).valid ? `Use ${item.name}` : `Update ${item.name}`}
-              </button>
+              <ProfileChoiceButton
+                key={item.id}
+                player={item}
+                predictionCounts={predictionCounts}
+                onChoose={() => savePlayer(`existing:${item.id}`)}
+              />
             ))}
           </div>
         )}
       </div>
     </section>
   );
+}
+
+function ProfileEntrySteps({ mode }) {
+  const steps = [
+    { key: 'name', label: 'Enter first and last name' },
+    { key: 'review', label: 'Review existing profile' },
+    { key: 'confirm', label: 'Confirm what happens next' },
+  ];
+  const activeIndex = mode === PROFILE_ENTRY_MODES.ENTER_NAME ? 0 :
+    mode === PROFILE_ENTRY_MODES.SINGLE_NAME_FOUND || mode === PROFILE_ENTRY_MODES.EXISTING_PROFILE_FOUND ? 1 : 2;
+  return (
+    <div className="profile-steps" aria-label="Profile setup steps">
+      {steps.map((step, index) => (
+        <span key={step.key} className={index <= activeIndex ? 'active' : ''}>
+          {index + 1}. {step.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function EntryNotice({ notice }) {
+  return (
+    <div className={`entry-notice ${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'}>
+      <strong>{notice.title}</strong>
+      <span>{notice.text}</span>
+    </div>
+  );
+}
+
+function ProfileChoiceButton({ player, predictionCounts, onChoose }) {
+  const needsUpgrade = !validatePlayerFullName(player.name).valid;
+  return (
+    <button className="profile-choice-button" onClick={onChoose}>
+      <span>
+        <strong>{needsUpgrade ? `Add last name to ${player.name}` : `Use ${player.name}`}</strong>
+        <small>{getProfilePickHint(player, predictionCounts)}</small>
+      </span>
+      <em>{needsUpgrade ? 'Keeps same profile' : 'Continue with this profile'}</em>
+    </button>
+  );
+}
+
+function getPrimaryProfileButtonLabel({ upgradePlayer, upgradeNameValidation, upgradeTargetName, protectedClaim }) {
+  if (upgradePlayer && upgradeNameValidation?.valid) {
+    if (protectedClaim?.action === 'rename') return 'Update name with Top 10 code';
+    return `Update this profile to ${upgradeTargetName}`;
+  }
+  if (upgradePlayer) return 'Review full name';
+  return 'Check profile';
 }
 
 function MatchesPage({
@@ -1781,6 +1906,226 @@ function Top10CodePage({
         {code && <button className="primary" onClick={openCelebration}>Open Top 10 status</button>}
       </div>
     </section>
+  );
+}
+
+function StatsPage({
+  player,
+  storedPlayer,
+  players,
+  matches,
+  predictions,
+  tournament,
+  currentTop10Status,
+  top10Protection,
+  setTop10Protection,
+  setTop10Celebration,
+  refresh,
+  navigate,
+  routeBase,
+}) {
+  const [loadingCode, setLoadingCode] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const displayPlayer = player || storedPlayer;
+  const stats = useMemo(
+    () => buildPlayerStats({
+      playerId: displayPlayer?.id,
+      players,
+      matches,
+      predictions,
+    }),
+    [displayPlayer?.id, players, matches, predictions],
+  );
+  const code = top10Protection?.playerId === storedPlayer?.id ? top10Protection?.code || '' : '';
+  const canRevealCode = Boolean(tournament?.id && storedPlayer?.id && storedPlayer?.player_token);
+  const showProtectedPanel = Boolean(currentTop10Status || top10Protection?.protected || code);
+
+  if (!displayPlayer) return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
+  if (player && !isPlayerActive(player)) return <InactivePlayer navigate={navigate} routeBase={routeBase} />;
+
+  const revealCode = async () => {
+    if (!canRevealCode) {
+      setCodeError('This browser cannot reveal the code. Use the browser where the profile was created or ask the admin to reset it.');
+      return;
+    }
+    setLoadingCode(true);
+    setCodeError('');
+    try {
+      const payload = await runTop10Request({
+        action: 'reveal',
+        tournament_id: tournament.id,
+        player_id: storedPlayer.id,
+        player_token: storedPlayer.player_token,
+      });
+      if (payload.protected && payload.code) {
+        setTop10Protection({ protected: true, playerId: storedPlayer.id, code: payload.code, statusLabel: payload.status_label || 'Top 10' });
+      } else {
+        setTop10Protection({ protected: false, playerId: storedPlayer.id });
+        setCodeError('This profile is not currently protected by a Top 10 code.');
+      }
+    } catch (err) {
+      setCodeError(err.message || 'Could not load your Top 10 code.');
+    } finally {
+      setLoadingCode(false);
+    }
+  };
+
+  const openCelebration = () => {
+    setTop10Celebration(createTop10Celebration({
+      player: displayPlayer,
+      code,
+      status: currentTop10Status,
+      firstReveal: false,
+    }));
+  };
+
+  return (
+    <section className="stats-page">
+      <PageTitle title="My Stats" action={<button onClick={refresh}>Refresh</button>} />
+      <section className="stats-hero panel">
+        <div>
+          <p className="eyebrow">Personal dashboard</p>
+          <h1>{displayPlayer.name}</h1>
+          <p className="muted">
+            {stats.rank ? `Rank #${stats.rank} of ${stats.totalPlayers} players with picks.` : 'Submit your first pick to enter the leaderboard.'}
+          </p>
+        </div>
+        <div className="stats-rank-card">
+          <span>{currentTop10Status?.status_label || 'Current rank'}</span>
+          <strong>{stats.rank ? `#${stats.rank}` : '-'}</strong>
+          <em>{stats.row.total_points} points</em>
+        </div>
+      </section>
+
+      <div className="stats-kpi-grid">
+        <StatsKpiCard label="Points" value={stats.row.total_points} detail={`${stats.livePoints} live`} />
+        <StatsKpiCard label="Picks" value={stats.picksSubmitted} detail={`${stats.openPicksRemaining} open`} />
+        <StatsKpiCard label="Completion" value={`${stats.completionRate}%`} detail="published matches" />
+        <StatsKpiCard label="Exact scores" value={stats.exactScoreCount} detail={`${stats.exactRate}% exact rate`} />
+        <StatsKpiCard label="Outcomes" value={stats.correctOutcomeCount} detail={`${stats.accuracyRate}% scoring picks`} />
+        <StatsKpiCard label="Missed" value={stats.zeroPointCount} detail="zero-point picks" />
+        <StatsKpiCard label="Avg points" value={stats.averagePointsPerCompletedPick} detail="per completed pick" />
+      </div>
+
+      <div className="stats-layout">
+        <section className="panel stats-comparison-panel">
+          <h2>Against the family</h2>
+          <ComparisonBar label="Points" value={stats.row.total_points} average={stats.comparison.groupAveragePoints} />
+          <ComparisonBar label="Picks" value={stats.picksSubmitted} average={stats.comparison.groupAveragePicks} />
+          <ComparisonBar label="Exact" value={stats.exactScoreCount} average={stats.comparison.groupAverageExact} />
+          <ComparisonBar label="Accuracy" value={stats.accuracyRate} average={stats.comparison.groupAverageAccuracy} suffix="%" />
+          <div className="stats-distance-grid">
+            <span><strong>{stats.comparison.pointsBehindLeader}</strong> behind leader</span>
+            <span><strong>{stats.comparison.pointsBehindRankAbove}</strong> behind rank above</span>
+            <span><strong>{stats.comparison.pointsToTop10}</strong> to Top 10</span>
+          </div>
+        </section>
+
+        <section className="panel stats-form-panel">
+          <h2>Recent form</h2>
+          {stats.recentForm.length > 0 ? (
+            <div className="form-chip-list">
+              {stats.recentForm.map((result) => (
+                <span className={`form-chip points-${result.points}`} key={result.prediction.id}>
+                  <strong>{result.points}</strong>
+                  {result.match.team_a} {result.match.team_a_score}-{result.match.team_b_score} {result.match.team_b}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">Completed-pick form appears after your picked matches finish.</p>
+          )}
+          {stats.bestResult && (
+            <div className="best-result-card">
+              <span>Best result</span>
+              <strong>{stats.bestResult.points} points</strong>
+              <em>{stats.bestResult.match.team_a} vs {stats.bestResult.match.team_b}</em>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="stats-layout">
+        <section className="panel">
+          <h2>Nearby leaderboard</h2>
+          {stats.nearbyLeaderboard.length > 0 ? (
+            <div className="nearby-list">
+              {stats.nearbyLeaderboard.map((row) => (
+                <div className={row.isCurrentPlayer ? 'current' : ''} key={row.player_id}>
+                  <span>#{row.rank}</span>
+                  <strong>{row.name}</strong>
+                  <em>{row.total_points} pts</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">You will appear here after your first submitted pick.</p>
+          )}
+        </section>
+
+        <section className="panel stats-next-panel">
+          <h2>Next action</h2>
+          {stats.upcomingGaps.length > 0 ? (
+            <>
+              <p className="muted">Matches still waiting for your prediction.</p>
+              <div className="upcoming-gap-list">
+                {stats.upcomingGaps.map((match) => (
+                  <button key={match.id} onClick={() => navigate(`${buildRoute(routeBase, '/matches')}#match-${match.id}`)}>
+                    <strong>{match.team_a} vs {match.team_b}</strong>
+                    <span>{formatDate(match.kickoff_time)}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="muted">No open prediction gaps right now.</p>
+          )}
+        </section>
+      </div>
+
+      {showProtectedPanel && (
+        <section className="panel stats-code-panel">
+          <div>
+            <p className="top10-kicker">Protected profile</p>
+            <h2>{currentTop10Status ? `${currentTop10Status.status_label} #${currentTop10Status.rank}` : 'Top 10 code'}</h2>
+            <p className="muted">Your private code protects this profile, picks, leaderboard history, and earned status on new browsers.</p>
+          </div>
+          {loadingCode && <p className="muted">Loading your private code...</p>}
+          {code && <div className="top10-code-display">{code}</div>}
+          {codeError && <p className="entry-error">{codeError}</p>}
+          <div className="button-row">
+            {!code && <button onClick={revealCode} disabled={loadingCode}>{loadingCode ? 'Loading...' : 'Reveal my code'}</button>}
+            {code && <button className="primary" onClick={openCelebration}>Open Top 10 status</button>}
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function StatsKpiCard({ label, value, detail }) {
+  return (
+    <article className="stats-kpi-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <em>{detail}</em>
+    </article>
+  );
+}
+
+function ComparisonBar({ label, value, average, suffix = '' }) {
+  const max = Math.max(Number(value) || 0, Number(average) || 0, 1);
+  return (
+    <div className="comparison-row">
+      <div>
+        <strong>{label}</strong>
+        <span>You {value}{suffix} / Avg {average}{suffix}</span>
+      </div>
+      <div className="comparison-bars" aria-hidden="true">
+        <span className="you" style={{ width: `${Math.max(6, ((Number(value) || 0) / max) * 100)}%` }} />
+        <span className="average" style={{ width: `${Math.max(6, ((Number(average) || 0) / max) * 100)}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -3473,14 +3818,14 @@ function HelpPage({ navigate, routeBase }) {
           <p>Submit predictions, see live scores, open Match Insight, and review played-match recaps with stats, goals, and grouped key events.</p>
           <button onClick={() => goTo('/predictions')}>Picks</button>
           <p>Check your own predictions and see everyone else after picks are revealed.</p>
+          <button onClick={() => goTo('/stats')}>My Stats</button>
+          <p>See your points, rank, accuracy, nearby leaderboard, open pick gaps, and protected Top 10 code when available.</p>
           <button onClick={() => goTo('/groups')}>Groups</button>
           <p>See group tables and schedules. Tap a country flag or name to open its nation page.</p>
           <button onClick={() => goTo('/favorites')}>Favorites</button>
           <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
           <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
           <p>Track points after matches finish. Rank #1 is marked as Leader, ranks #2-#10 are highlighted as Top 10, and your name appears once you submit a prediction.</p>
-          <button onClick={() => goTo('/top10-code')}>My code</button>
-          <p>Protected Top 10 players can view and copy their private code for keeping their profile safe on a new browser or device.</p>
         </div>
       </section>
 
@@ -3514,7 +3859,7 @@ function HelpPage({ navigate, routeBase }) {
           {
             question: 'Why do I need first and last name?',
             answer:
-              'Use your first and last name so players do not have the same name on the leaderboard. If you already used one name, the app may ask you to add your last name. Your saved picks stay with the same profile.',
+              'Use your first and last name so players do not have the same name on the leaderboard. If you already used one name, the app will show your existing profile first, then ask you to confirm the full-name update before anything changes. Your saved picks stay with the same profile.',
           },
           {
             question: 'What is Top 10 protection?',
@@ -3524,7 +3869,7 @@ function HelpPage({ navigate, routeBase }) {
           {
             question: 'Why did my Top 10 badge disappear?',
             answer:
-              'The Leader or Top 10 badge appears only while you are currently ranked 1 to 10. If you drop out of the current Top 10, the badge disappears, but My code remains available for your protected profile.',
+              'The Leader or Top 10 badge appears only while you are currently ranked 1 to 10. If you drop out of the current Top 10, your protected profile details remain available in My Stats.',
           },
           {
             question: 'What is Match Insight?',
@@ -3621,7 +3966,7 @@ function normalizeRoute(value) {
 
 function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
-  return ['/', '/matches', '/predictions', '/groups', '/bracket', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
+  return ['/', '/matches', '/predictions', '/stats', '/groups', '/bracket', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
 }
 
 function getRouteGroupSlug(route) {

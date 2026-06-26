@@ -30,6 +30,22 @@ page.on('pageerror', (error) => fatalConsole.push(error.message));
 try {
   await page.route('**/api/top10-status', async (route) => {
     if (isProdSmoke) return route.continue();
+    const request = route.request();
+    const payload = request.method() === 'POST' ? request.postDataJSON() : {};
+    if (payload.action === 'rename') {
+      const player = smokePlayers.find((row) => row.id === payload.player_id);
+      if (player) player.name = payload.name;
+      return route.fulfill(json({ player: player || { id: payload.player_id, name: payload.name } }));
+    }
+    if (payload.action === 'verify') {
+      return route.fulfill(json({ verified: true, protected: false }));
+    }
+    if (payload.action === 'check') {
+      return route.fulfill(json({ protected: false, requiresCode: false }));
+    }
+    if (payload.action === 'reveal') {
+      return route.fulfill(json({ protected: true, code: 'S9T1', status_label: 'Top 10' }));
+    }
     return route.fulfill(json({ protected: false, created: 0 }));
   });
   await page.route('**/rest/v1/tournaments*', async (route) => {
@@ -112,8 +128,9 @@ try {
   await expectVisible(page, 'text=Predict Smoke Cup scores.');
 
   if (!isProdSmoke) {
+    await verifySingleNameUpgradeFlow(page);
     await page.getByLabel('Full name').fill('Smoke Tester');
-    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Check profile' }).click();
     await expectVisible(page, 'text=Live now');
     await expectVisible(page, 'text=Canada');
     await expectVisible(page, 'img[alt="Canada flag"]');
@@ -134,6 +151,7 @@ try {
     await verifyBracketPage(page);
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
+    await verifyStatsPage(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await verifyInactiveStoredPlayerGate(page);
   } else {
@@ -141,9 +159,9 @@ try {
     await expectVisible(page, 'text=Matches');
   }
 
-  for (const route of ['/predictions', '/groups', '/bracket', '/leaderboard', '/admin']) {
+  for (const route of ['/predictions', '/stats', '/groups', '/bracket', '/leaderboard', '/admin']) {
     await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
-    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/groups' ? 'text=Groups' : route === '/bracket' ? 'text=Bracket' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
+    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/stats' ? 'text=My Stats' : route === '/groups' ? 'text=Groups' : route === '/bracket' ? 'text=Bracket' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
   }
 
   if (isProdSmoke) {
@@ -462,6 +480,55 @@ async function verifyInactiveStoredPlayerGate(page) {
     if (storedPlayer) localStorage.setItem('current-player', storedPlayer);
     else localStorage.removeItem('current-player');
   }, activeStoredPlayer);
+}
+
+async function verifyStatsPage(page) {
+  await page.goto(`${baseUrl}/stats`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=My Stats');
+  await expectVisible(page, 'text=Personal dashboard');
+  await expectVisible(page, 'text=Against the family');
+  await expectVisible(page, 'text=Nearby leaderboard');
+  await expectVisible(page, 'text=Protected profile');
+  await expectVisible(page, 'text=S9T1');
+  await expectVisible(page, 'nav >> text=My Stats');
+  if (await page.locator('header').getByRole('button', { name: 'My code' }).count()) {
+    throw new Error('My code should not be shown as a top-nav button.');
+  }
+}
+
+async function verifySingleNameUpgradeFlow(page) {
+  smokePlayers.push({
+    id: 'player-single-name',
+    name: 'Solo',
+    player_token: 'single-token',
+    tournament_id: 'tournament-smoke',
+    is_active: true,
+    created_at: new Date().toISOString(),
+  });
+  smokePredictions.push({
+    id: 'prediction-single-name',
+    tournament_id: 'tournament-smoke',
+    player_id: 'player-single-name',
+    match_id: 'match-played',
+    predicted_team_a_score: 2,
+    predicted_team_b_score: 1,
+    submitted_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByLabel('Full name').fill('Solo');
+  await page.getByRole('button', { name: 'Check profile' }).click();
+  await expectVisible(page, 'text=We found your existing profile: Solo');
+  await expectVisible(page, 'text=This profile has 1 saved pick.');
+  await page.getByRole('button', { name: /Add last name to Solo/ }).click();
+  await page.getByLabel('Full name').fill('Solo Tester');
+  await expectVisible(page, 'text=Update Solo to Solo Tester');
+  await expectVisible(page, 'text=Your saved picks, leaderboard history, and Top 10 status stay with this profile.');
+  await page.getByRole('button', { name: 'Update this profile to Solo Tester' }).click();
+  await page.waitForURL(/\/matches/, { timeout: 10000 });
+  await page.evaluate(() => localStorage.removeItem('current-player'));
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
 }
 
 async function verifyBracketPage(page) {
