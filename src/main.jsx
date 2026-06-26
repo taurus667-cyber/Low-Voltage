@@ -31,6 +31,7 @@ import {
   PROFILE_ENTRY_MODES,
 } from './lib/profileEntryFlow.js';
 import { buildPlayerStats } from './lib/playerStats.js';
+import { PREDICTION_STYLES, buildPredictionStyle, buildPredictionStylesByPlayer } from './lib/predictionStyle.js';
 import { isPlayerActive, isPublicStatsPlayer } from './lib/playerVisibility.js';
 import { selectAllRows } from './lib/supabasePaging.js';
 import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
@@ -90,16 +91,21 @@ function App() {
       const selectedMatchIds = selectedMatches.map((match) => match.id);
       const currentPageRoute = getPageRoute(route);
       const needsMatchDetails = currentPageRoute === '/matches' || currentPageRoute.startsWith('/nations/');
+      const needsPredictionStyleData = currentPageRoute === '/stats' || currentPageRoute === '/leaderboard';
       const hasLiveMatches = selectedMatches.some((match) => isMatchLive(match));
-      const [eventRows, statisticRows, lineupRows, aidRows, oddsRows] = hasLiveMatches || needsMatchDetails
+      const [eventRows, statisticRows, lineupRows] = hasLiveMatches || needsMatchDetails
         ? await Promise.all([
             selectRowsForMatches(supabase, 'match_events', selectedMatchIds, 'elapsed'),
             selectRowsForMatches(supabase, 'match_statistics', selectedMatchIds),
             selectRowsForMatches(supabase, 'match_lineups', selectedMatchIds),
+          ])
+        : [{ data: [] }, { data: [] }, { data: [] }];
+      const [aidRows, oddsRows] = hasLiveMatches || needsMatchDetails || needsPredictionStyleData
+        ? await Promise.all([
             selectRowsForMatches(supabase, 'match_prediction_aids', selectedMatchIds, 'aid_type'),
             selectRowsForMatches(supabase, 'match_odds', selectedMatchIds),
           ])
-        : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
+        : [{ data: [] }, { data: [] }];
       setTournaments(loadedTournaments);
       setPlayers(playerRows.data || []);
       setMatches(loadedMatches);
@@ -1725,11 +1731,15 @@ function buildEventTitle(event) {
   return parts.join(' · ');
 }
 
-function LeaderboardPage({ players, matches, predictions, refresh }) {
+function LeaderboardPage({ players, matches, predictions, predictionAids, matchOdds, refresh }) {
   const publicPlayers = players.filter(isPublicStatsPlayer);
   const rows = calculateLeaderboard(publicPlayers, matches, predictions);
   const visibleRows = rows.filter((row) => row.predictions_submitted_count > 0);
   const liveRows = calculateLiveLeaderboard(publicPlayers, matches, predictions);
+  const stylesByPlayer = useMemo(
+    () => buildPredictionStylesByPlayer({ players: publicPlayers, matches, predictions, predictionAids, matchOdds }),
+    [publicPlayers, matches, predictions, predictionAids, matchOdds],
+  );
   return (
     <section>
       <PageTitle title="Leaderboard" action={<button onClick={refresh}>Refresh</button>} />
@@ -1764,7 +1774,10 @@ function LeaderboardPage({ players, matches, predictions, refresh }) {
                   </td>
                   <td>
                     <span className="leaderboard-player">
-                      <strong>{row.name}</strong>
+                      <span className="leaderboard-player-main">
+                        <PredictionStyleBadge style={stylesByPlayer.get(row.player_id)} size="small" />
+                        <strong>{row.name}</strong>
+                      </span>
                       {rankStatus?.key === 'leader' && <span>Current top player</span>}
                       {rankStatus?.key === 'top10' && <span>{rankStatus.shortLabel}</span>}
                     </span>
@@ -1917,6 +1930,8 @@ function StatsPage({
   players,
   matches,
   predictions,
+  predictionAids,
+  matchOdds,
   tournament,
   currentTop10Status,
   top10Protection,
@@ -1937,6 +1952,17 @@ function StatsPage({
       predictions,
     }),
     [displayPlayer?.id, players, matches, predictions],
+  );
+  const predictionStyle = useMemo(
+    () => buildPredictionStyle({
+      playerId: displayPlayer?.id,
+      players,
+      matches,
+      predictions,
+      predictionAids,
+      matchOdds,
+    }),
+    [displayPlayer?.id, players, matches, predictions, predictionAids, matchOdds],
   );
   const code = top10Protection?.playerId === storedPlayer?.id ? top10Protection?.code || '' : '';
   const canRevealCode = Boolean(tournament?.id && storedPlayer?.id && storedPlayer?.player_token);
@@ -2011,6 +2037,8 @@ function StatsPage({
         <StatsKpiCard label="Missed" value={stats.zeroPointCount} detail="zero-point picks" />
         <StatsKpiCard label="Avg points" value={stats.averagePointsPerCompletedPick} detail="per completed pick" />
       </div>
+
+      <PredictionStylePanel style={predictionStyle} />
 
       <div className="stats-layout">
         <section className="panel stats-comparison-panel">
@@ -2115,6 +2143,142 @@ function StatsKpiCard({ label, value, detail }) {
       <strong>{value}</strong>
       <em>{detail}</em>
     </article>
+  );
+}
+
+function PredictionStylePanel({ style }) {
+  return (
+    <section className={`panel prediction-style-panel style-${style.key}`}>
+      <div className="prediction-style-hero">
+        <PredictionStyleBadge style={style} size="large" />
+        <div>
+          <p className="eyebrow">Prediction style</p>
+          <h2>{style.label}</h2>
+          <p className="muted">{style.tone} pattern. {style.mindset}</p>
+          {style.provisional && (
+            <p className="prediction-style-note">
+              Provisional label. It becomes more reliable after 5 submitted picks.
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="prediction-style-copy">
+        <div>
+          <span>Strength</span>
+          <strong>{style.strength}</strong>
+        </div>
+        <div>
+          <span>Possible blind spot</span>
+          <strong>{style.blindSpot}</strong>
+        </div>
+      </div>
+      <div className="prediction-style-metrics">
+        <span><strong>{style.metrics.favoriteAlignment}%</strong> favorite alignment</span>
+        <span><strong>{style.metrics.underdogRate}%</strong> against favorite</span>
+        <span><strong>{style.metrics.consensusDistance}%</strong> from family consensus</span>
+        <span><strong>{style.metrics.averagePredictedMargin}</strong> avg goal margin</span>
+        <span><strong>{style.metrics.drawRate}%</strong> draw picks</span>
+        <span><strong>{style.score}</strong> risk score</span>
+      </div>
+      <details className="prediction-style-explainer">
+        <summary>How this is calculated</summary>
+        <p>
+          This style compares your submitted picks with available favorite signals, the family&apos;s most common
+          prediction outcome, your predicted goal margins, draw frequency, and scoreline variance.
+        </p>
+        <p>
+          Favorite alignment means choosing the team favored by available match insight or odds data. Consensus
+          distance means how often your predicted outcome differs from the family&apos;s most common pick for that
+          match. Boldness comes from underdog picks, draws, wider margins, and variable scorelines.
+        </p>
+        <p>
+          The labels are based on prediction behavior under uncertainty, inspired by prospect theory,
+          favourite-longshot bias research, and prediction-market calibration work. They are not personality
+          judgments or betting advice.
+        </p>
+      </details>
+      <div className="prediction-style-all">
+        <h3>All styles</h3>
+        <div>
+          {Object.values(PREDICTION_STYLES).map((item) => (
+            <article key={item.key}>
+              <PredictionStyleBadge style={item} size="small" />
+              <strong>{item.label}</strong>
+              <span>{item.tone}</span>
+              <p>{item.strength}</p>
+              <em>{item.blindSpot}</em>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PredictionStyleBadge({ style, size = 'small' }) {
+  if (!style) return null;
+  return (
+    <span
+      className={`prediction-style-badge ${size} style-${style.key}`}
+      title={`${style.label}: ${style.tone}`}
+      aria-label={`${style.label}: ${style.tone}`}
+    >
+      <AnimalEmblem styleKey={style.key} />
+    </span>
+  );
+}
+
+function AnimalEmblem({ styleKey }) {
+  if (styleKey === 'shield_turtle') {
+    return (
+      <svg viewBox="0 0 80 80" aria-hidden="true">
+        <path className="emblem-shadow" d="M20 62c9 6 29 7 42-1" />
+        <path className="emblem-fill alt" d="M18 44c0-17 12-29 29-29 13 0 23 9 23 22 0 18-14 31-33 31-12 0-19-9-19-24Z" />
+        <path className="emblem-fill" d="M25 39c4-12 13-19 25-18 8 1 14 7 15 15-9 1-20 5-29 14-6-2-10-6-11-11Z" />
+        <path className="emblem-accent" d="M32 38c4-7 10-11 18-11M38 50c6-7 15-12 26-14" />
+        <path className="emblem-fill" d="M63 34l10-6 3 8-9 8M21 49 9 52l4 8 12-5M35 64l-3 10h11l2-10" />
+        <circle className="emblem-eye" cx="59" cy="29" r="3" />
+        <path className="emblem-smile" d="M55 40c3 2 7 2 10-1" />
+      </svg>
+    );
+  }
+  if (styleKey === 'falcon_striker') {
+    return (
+      <svg viewBox="0 0 80 80" aria-hidden="true">
+        <path className="emblem-shadow" d="M16 64c11 5 34 5 49-1" />
+        <path className="emblem-fill" d="M14 47c17-23 34-34 55-31-7 7-13 14-18 22 8-3 15-3 21 1-15 3-28 10-39 23 1-8 4-15 9-23-8 3-17 6-28 8Z" />
+        <path className="emblem-fill alt" d="M40 21c9 4 16 11 19 20l-19-2-12 11c1-13 5-22 12-29Z" />
+        <path className="emblem-accent" d="M43 29c5 3 9 7 12 13M37 44l17 8" />
+        <path className="emblem-beak" d="M57 22 72 13l-5 15Z" />
+        <circle className="emblem-eye" cx="52" cy="27" r="3" />
+        <path className="emblem-smile" d="M49 34c4 1 8 0 11-3" />
+      </svg>
+    );
+  }
+  if (styleKey === 'lone_wolf') {
+    return (
+      <svg viewBox="0 0 80 80" aria-hidden="true">
+        <path className="emblem-shadow" d="M17 66c12 6 34 6 47-1" />
+        <path className="emblem-fill alt" d="M16 56 10 28l17 8 13-22 13 22 17-8-6 28-24 12-24-12Z" />
+        <path className="emblem-fill" d="M24 53c4-12 10-19 16-20 7 1 13 8 16 20l-16 9-16-9Z" />
+        <path className="emblem-accent" d="m29 43 8 5-11 6M51 43l-8 5 11 6" />
+        <circle className="emblem-eye" cx="32" cy="37" r="3" />
+        <circle className="emblem-eye" cx="48" cy="37" r="3" />
+        <path className="emblem-nose" d="M36 53h8l-4 5Z" />
+        <path className="emblem-smile" d="M32 59c5 3 11 3 16 0" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 80 80" aria-hidden="true">
+      <path className="emblem-shadow" d="M14 63c13 6 36 6 52 0" />
+      <path className="emblem-fill" d="M13 48c10-25 27-37 52-35-4 6-9 12-16 19l17 2c-8 9-18 15-31 16l-8 14-5-12-9-4Z" />
+      <path className="emblem-fill alt" d="M30 25c9 3 16 9 19 18l-18 4-9-4c1-8 4-14 8-18Z" />
+      <path className="emblem-accent" d="M35 30c6 3 10 8 13 14M26 52 14 66M42 51l6 14" />
+      <circle className="emblem-eye" cx="47" cy="25" r="3" />
+      <path className="emblem-nose" d="M54 21 66 11l-4 14Z" />
+      <path className="emblem-smile" d="M41 35c5 2 10 1 14-3" />
+    </svg>
   );
 }
 

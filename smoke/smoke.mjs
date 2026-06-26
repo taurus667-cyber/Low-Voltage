@@ -164,6 +164,7 @@ try {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
     await verifyStatsPage(page);
+    await verifyLeaderboardStyles(page);
     await verifyHiddenPublicStatsFlow(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await verifyInactiveStoredPlayerGate(page);
@@ -499,6 +500,10 @@ async function verifyStatsPage(page) {
   await page.goto(`${baseUrl}/stats`, { waitUntil: 'networkidle' });
   await expectVisible(page, 'text=My Stats');
   await expectVisible(page, 'text=Personal dashboard');
+  await expectVisible(page, 'text=Prediction style');
+  await expectVisible(page, 'text=Tactical Fox');
+  await expectVisible(page, 'text=How this is calculated');
+  await expectVisible(page, 'text=All styles');
   await expectVisible(page, 'text=Against the family');
   await expectVisible(page, 'text=Nearby leaderboard');
   await expectVisible(page, 'text=Protected profile');
@@ -507,6 +512,14 @@ async function verifyStatsPage(page) {
   if (await page.locator('header').getByRole('button', { name: 'My code' }).count()) {
     throw new Error('My code should not be shown as a top-nav button.');
   }
+}
+
+async function verifyLeaderboardStyles(page) {
+  await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Leaderboard');
+  await expectVisible(page, 'text=Smoke Tester');
+  const badges = await page.locator('.leaderboard-player-main .prediction-style-badge').count();
+  if (!badges) throw new Error('Expected prediction style badges on the Leaderboard.');
 }
 
 async function verifyHiddenPublicStatsFlow(page) {

@@ -1945,7 +1945,18 @@ th {
   color: #102a27;
 }
 
-.leaderboard-player > span {
+.leaderboard-player-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.leaderboard-player-main strong {
+  overflow-wrap: anywhere;
+}
+
+.leaderboard-player > span:not(.leaderboard-player-main) {
   color: #63766f;
   font-size: 0.78rem;
   font-weight: 800;
@@ -2041,6 +2052,237 @@ th {
 
 .stats-kpi-card {
   background: #ffffff;
+}
+
+.prediction-style-panel {
+  display: grid;
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.prediction-style-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.prediction-style-hero h2 {
+  margin-bottom: 0.3rem;
+  color: #102a27;
+  font-size: clamp(1.8rem, 5vw, 3rem);
+}
+
+.prediction-style-note {
+  width: fit-content;
+  margin-top: 0.55rem;
+  border-radius: 999px;
+  background: #fff7dc;
+  color: #6b4b00;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.prediction-style-copy,
+.prediction-style-metrics,
+.prediction-style-all > div {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.prediction-style-copy {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prediction-style-copy div,
+.prediction-style-metrics span,
+.prediction-style-all article {
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.75rem;
+}
+
+.prediction-style-copy span,
+.prediction-style-all span {
+  display: block;
+  color: #63766f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.prediction-style-copy strong,
+.prediction-style-metrics strong,
+.prediction-style-all strong {
+  color: #102a27;
+}
+
+.prediction-style-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+}
+
+.prediction-style-metrics span {
+  color: #55726b;
+  font-weight: 800;
+}
+
+.prediction-style-metrics strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 1.35rem;
+}
+
+.prediction-style-explainer {
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #f7fbf9;
+  padding: 0.85rem;
+}
+
+.prediction-style-explainer summary {
+  cursor: pointer;
+  color: #102a27;
+  font-weight: 900;
+}
+
+.prediction-style-explainer p {
+  padding-top: 0.65rem;
+}
+
+.prediction-style-all {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.prediction-style-all h3 {
+  margin: 0;
+  color: #102a27;
+}
+
+.prediction-style-all > div {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.prediction-style-all article {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.prediction-style-all em {
+  color: #55726b;
+  font-style: normal;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.prediction-style-badge {
+  --style-bg: #e9f3ef;
+  --style-fg: #0f766e;
+  --style-alt: #a9d8c7;
+  --style-accent: #ffffff;
+  --style-dark: #173f38;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--style-fg), white 45%);
+  border-radius: 999px;
+  background: var(--style-bg);
+  color: var(--style-fg);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+.prediction-style-badge.small {
+  width: 2.1rem;
+  height: 2.1rem;
+}
+
+.prediction-style-badge.large {
+  width: clamp(5.4rem, 18vw, 7.2rem);
+  height: clamp(5.4rem, 18vw, 7.2rem);
+}
+
+.prediction-style-badge svg {
+  width: 82%;
+  height: 82%;
+}
+
+.prediction-style-badge svg * {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.prediction-style-badge .emblem-fill {
+  fill: var(--style-fg);
+  stroke: var(--style-dark);
+  stroke-width: 3.4;
+}
+
+.prediction-style-badge .emblem-fill.alt {
+  fill: var(--style-alt);
+}
+
+.prediction-style-badge .emblem-accent,
+.prediction-style-badge .emblem-smile {
+  fill: none;
+  stroke: var(--style-dark);
+  stroke-width: 3.2;
+}
+
+.prediction-style-badge .emblem-eye,
+.prediction-style-badge .emblem-nose {
+  fill: var(--style-dark);
+  stroke: none;
+}
+
+.prediction-style-badge .emblem-beak {
+  fill: var(--style-accent);
+  stroke: var(--style-dark);
+  stroke-width: 3.2;
+}
+
+.prediction-style-badge .emblem-shadow {
+  fill: none;
+  stroke: rgba(16, 42, 39, 0.18);
+  stroke-width: 5;
+}
+
+.prediction-style-badge.style_shield_turtle,
+.style-shield_turtle .prediction-style-badge,
+.style-shield_turtle.prediction-style-badge {
+  --style-bg: #eaf6e7;
+  --style-fg: #287044;
+  --style-alt: #97cf82;
+  --style-accent: #f7ffd9;
+}
+
+.prediction-style-badge.style_tactical_fox,
+.style-tactical_fox .prediction-style-badge,
+.style-tactical_fox.prediction-style-badge {
+  --style-bg: #fff1d7;
+  --style-fg: #a85012;
+  --style-alt: #f59d35;
+  --style-accent: #fff8e6;
+}
+
+.prediction-style-badge.style_falcon_striker,
+.style-falcon_striker .prediction-style-badge,
+.style-falcon_striker.prediction-style-badge {
+  --style-bg: #e8f1ff;
+  --style-fg: #2456a6;
+  --style-alt: #8db9ff;
+  --style-accent: #ffd55a;
+}
+
+.prediction-style-badge.style_lone_wolf,
+.style-lone_wolf .prediction-style-badge,
+.style-lone_wolf.prediction-style-badge {
+  --style-bg: #f0eef7;
+  --style-fg: #594099;
+  --style-alt: #b9acd9;
+  --style-accent: #ffffff;
 }
 
 .stats-layout {
@@ -2580,6 +2822,8 @@ th {
   .admin-grid,
   .stats-hero,
   .stats-layout,
+  .prediction-style-hero,
+  .prediction-style-copy,
   .clone-create-grid,
   .admin-player-merge,
   .merge-summary,
@@ -2599,6 +2843,7 @@ th {
   .score-row,
   .two-col,
   .stats-distance-grid,
+  .prediction-style-metrics,
   .help-actions,
   .help-grid,
   .help-link-list {
