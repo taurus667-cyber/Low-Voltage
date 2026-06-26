@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { calculateLeaderboard } from './scoring.js';
 import { buildPlayerStats } from './playerStats.js';
+import { isPublicStatsPlayer } from './playerVisibility.js';
 
 const NOW = new Date('2026-06-20T12:00:00Z').getTime();
 
@@ -96,12 +98,48 @@ test('nearby leaderboard returns rows around the current player', () => {
   assert.equal(stats.nearbyLeaderboard.some((row) => row.player_id === 'p3' && row.isCurrentPlayer), true);
 });
 
+test('public leaderboard excludes hidden players and compresses ranks', () => {
+  const allPlayers = [
+    player('p1', 'Hidden Owner', { hidden_from_public_stats: true }),
+    player('p2', 'Public Player'),
+  ];
+  const rows = calculateLeaderboard(
+    allPlayers.filter(isPublicStatsPlayer),
+    [match({ id: 'm1', team_a_score: 2, team_b_score: 0, kickoff_time: '2026-06-19T12:00:00Z' })],
+    [
+      prediction({ player_id: 'p1', match_id: 'm1', a: 2, b: 0 }),
+      prediction({ player_id: 'p2', match_id: 'm1', a: 1, b: 0 }),
+    ],
+  ).filter((row) => row.predictions_submitted_count > 0);
+
+  assert.deepEqual(rows.map((row) => row.player_id), ['p2']);
+});
+
+test('hidden player My Stats keeps true private rank', () => {
+  const stats = buildPlayerStats({
+    playerId: 'p1',
+    players: [
+      player('p1', 'Hidden Owner', { hidden_from_public_stats: true }),
+      player('p2', 'Public Player'),
+    ],
+    matches: [match({ id: 'm1', team_a_score: 2, team_b_score: 0, kickoff_time: '2026-06-19T12:00:00Z' })],
+    predictions: [
+      prediction({ player_id: 'p1', match_id: 'm1', a: 2, b: 0 }),
+      prediction({ player_id: 'p2', match_id: 'm1', a: 1, b: 0 }),
+    ],
+    now: NOW,
+  });
+
+  assert.equal(stats.rank, 1);
+  assert.equal(stats.row.total_points, 3);
+});
+
 function players() {
   return [player('p1', 'Dana One'), player('p2', 'Nora Two'), player('p3', 'New Player')];
 }
 
-function player(id, name) {
-  return { id, name, is_active: true };
+function player(id, name, overrides = {}) {
+  return { id, name, is_active: true, hidden_from_public_stats: false, ...overrides };
 }
 
 function match(overrides = {}) {

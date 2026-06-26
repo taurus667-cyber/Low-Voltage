@@ -1,9 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { isPublicStatsPlayer } from '../src/lib/playerVisibility.js';
 
 test('active player can submit an open future match prediction', () => {
   const result = canWritePrediction({
     player: { id: 'active-player', is_active: true },
+    match: futureMatch(),
+  });
+
+  assert.equal(result.allowed, true);
+});
+
+test('hidden public-stats player can still submit an open future match prediction', () => {
+  const result = canWritePrediction({
+    player: { id: 'hidden-player', is_active: true, hidden_from_public_stats: true },
     match: futureMatch(),
   });
 
@@ -51,6 +61,21 @@ test('inactive duplicate predictions are excluded from active submitted-by rows'
   assert.deepEqual(visibleRows.map((prediction) => prediction.id), ['visible-pick']);
 });
 
+test('hidden public-stats predictions are excluded from public submitted-by rows', () => {
+  const players = [
+    { id: 'public-player', name: 'Public Player', is_active: true },
+    { id: 'hidden-player', name: 'Hidden Player', is_active: true, hidden_from_public_stats: true },
+  ];
+  const predictions = [
+    { id: 'visible-pick', player_id: 'public-player', match_id: 'match-1' },
+    { id: 'hidden-pick', player_id: 'hidden-player', match_id: 'match-1' },
+  ];
+
+  const visibleRows = getPublicSubmittedPredictions({ predictions, players, matchId: 'match-1' });
+
+  assert.deepEqual(visibleRows.map((prediction) => prediction.id), ['visible-pick']);
+});
+
 function canWritePrediction({ player, match, now = Date.now() }) {
   if (!player || player.is_active === false) {
     return { allowed: false, reason: 'Predictions cannot be changed for inactive players.' };
@@ -69,6 +94,14 @@ function getActiveSubmittedPredictions({ predictions, players, matchId }) {
   return predictions.filter((prediction) =>
     prediction.match_id === matchId &&
     playersById.get(prediction.player_id)?.is_active !== false
+  );
+}
+
+function getPublicSubmittedPredictions({ predictions, players, matchId }) {
+  const playersById = new Map(players.map((player) => [player.id, player]));
+  return predictions.filter((prediction) =>
+    prediction.match_id === matchId &&
+    isPublicStatsPlayer(playersById.get(prediction.player_id))
   );
 }
 

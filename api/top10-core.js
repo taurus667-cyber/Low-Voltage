@@ -1,4 +1,5 @@
 import { calculateLeaderboard, isFinalScoreComplete } from '../src/lib/scoring.js';
+import { isPublicStatsPlayer } from '../src/lib/playerVisibility.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -25,7 +26,7 @@ export function getTop10Entrants(players = [], matches = [], predictions = []) {
   if (!finishedMatches.length) return { entrants: [], latestMatch: null };
   const finishedIds = new Set(finishedMatches.map((match) => match.id));
   const eligiblePredictions = predictions.filter((prediction) => finishedIds.has(prediction.match_id));
-  const rows = calculateLeaderboard(players, finishedMatches, eligiblePredictions)
+  const rows = calculateLeaderboard(players.filter(isPublicStatsPlayer), finishedMatches, eligiblePredictions)
     .filter((row) => row.predictions_submitted_count > 0 && row.total_points > 0)
     .slice(0, 10)
     .map((row, index) => ({ ...row, rank: index + 1 }));

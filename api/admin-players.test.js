@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mergePlayers, previewPlayerMerge } from './admin-players.js';
+import { mergePlayers, previewPlayerMerge, setPublicStatsVisibility } from './admin-players.js';
 
 test('merge moves non-conflicting picks and deactivates source', async () => {
   const supabase = createMemorySupabase();
@@ -92,6 +92,18 @@ test('preview reports conflicts before merge', async () => {
   assert.equal(preview.counts.transferable_predictions, 1);
   assert.equal(preview.counts.conflicts, 1);
   assert.equal(preview.conflicts[0].match.team_a, 'Argentina');
+});
+
+test('public stats visibility toggle keeps account active', async () => {
+  const supabase = createMemorySupabase();
+
+  const result = await setPublicStatsVisibility(supabase, {
+    player_id: 'target',
+    hidden: true,
+  });
+
+  assert.equal(result.player.hidden_from_public_stats, true);
+  assert.equal(result.player.is_active, true);
 });
 
 function createMemorySupabase() {

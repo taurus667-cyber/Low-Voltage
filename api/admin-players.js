@@ -17,6 +17,10 @@ export default async function handler(request, response) {
       const result = await deactivatePlayer(supabase, body);
       return response.status(200).json(result);
     }
+    if (body.action === 'set-public-stats-visibility') {
+      const result = await setPublicStatsVisibility(supabase, body);
+      return response.status(200).json(result);
+    }
     if (body.action === 'preview-merge') {
       const result = await previewPlayerMerge(supabase, body);
       return response.status(200).json(result);
@@ -50,6 +54,20 @@ export async function deactivatePlayer(supabase, body) {
     .single();
   if (error) throw error;
   return { action: 'deactivate', player: data };
+}
+
+export async function setPublicStatsVisibility(supabase, body) {
+  const playerId = cleanId(body.player_id);
+  if (!playerId) throw new Error('Player id is required.');
+  const hidden = body.hidden === true;
+  const { data, error } = await supabase
+    .from('players')
+    .update({ hidden_from_public_stats: hidden })
+    .eq('id', playerId)
+    .select()
+    .single();
+  if (error) throw error;
+  return { action: 'set-public-stats-visibility', player: data };
 }
 
 export async function previewPlayerMerge(supabase, body) {

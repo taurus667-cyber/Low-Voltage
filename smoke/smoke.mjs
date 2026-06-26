@@ -48,6 +48,17 @@ try {
     }
     return route.fulfill(json({ protected: false, created: 0 }));
   });
+  await page.route('**/api/admin-players', async (route) => {
+    if (isProdSmoke) return route.continue();
+    const request = route.request();
+    const payload = request.method() === 'POST' ? request.postDataJSON() : {};
+    if (payload.action === 'set-public-stats-visibility') {
+      const player = smokePlayers.find((row) => row.id === payload.player_id);
+      if (player) player.hidden_from_public_stats = payload.hidden === true;
+      return route.fulfill(json({ player }));
+    }
+    return route.fulfill(json({}));
+  });
   await page.route('**/rest/v1/tournaments*', async (route) => {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json([smokeTournament()]));
@@ -63,6 +74,7 @@ try {
         player_token: payload.player_token,
         tournament_id: payload.tournament_id || 'tournament-smoke',
         is_active: true,
+        hidden_from_public_stats: false,
         created_at: new Date().toISOString(),
       };
       smokePlayers.push(player);
@@ -152,6 +164,7 @@ try {
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
     await verifyStatsPage(page);
+    await verifyHiddenPublicStatsFlow(page);
     await page.setViewportSize({ width: 1280, height: 720 });
     await verifyInactiveStoredPlayerGate(page);
   } else {
@@ -494,6 +507,43 @@ async function verifyStatsPage(page) {
   if (await page.locator('header').getByRole('button', { name: 'My code' }).count()) {
     throw new Error('My code should not be shown as a top-nav button.');
   }
+}
+
+async function verifyHiddenPublicStatsFlow(page) {
+  const smokePlayer = smokePlayers.find((player) => player.name === 'Smoke Tester');
+  if (!smokePlayer) throw new Error('Expected Smoke Tester player before public stats visibility smoke.');
+  if (!smokePredictions.some((prediction) => prediction.id === 'prediction-smoke-played')) {
+    smokePredictions.push({
+      id: 'prediction-smoke-played',
+      tournament_id: 'tournament-smoke',
+      player_id: smokePlayer.id,
+      match_id: 'match-played',
+      predicted_team_a_score: 2,
+      predicted_team_b_score: 1,
+      submitted_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Smoke Tester');
+  await page.evaluate(() => {
+    sessionStorage.setItem('admin-ok', 'yes');
+    sessionStorage.setItem('admin-password', 'smoke-admin');
+  });
+  await page.goto(`${baseUrl}/admin`, { waitUntil: 'networkidle' });
+  const row = page.locator('.admin-player-row', { hasText: 'Smoke Tester' }).first();
+  await row.getByRole('button', { name: 'Hide from public stats' }).click();
+  await expectVisible(page, 'text=Smoke Tester is hidden from public stats and keeps app access.');
+  await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });
+  if (await page.getByText('Smoke Tester').count()) {
+    throw new Error('Hidden player should not appear on the public Leaderboard.');
+  }
+  await page.goto(`${baseUrl}/stats`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Smoke Tester');
+  await expectVisible(page, 'text=Hidden from public stats.');
+  await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Matches');
 }
 
 async function verifySingleNameUpgradeFlow(page) {

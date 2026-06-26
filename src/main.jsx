@@ -31,6 +31,7 @@ import {
   PROFILE_ENTRY_MODES,
 } from './lib/profileEntryFlow.js';
 import { buildPlayerStats } from './lib/playerStats.js';
+import { isPlayerActive, isPublicStatsPlayer } from './lib/playerVisibility.js';
 import { selectAllRows } from './lib/supabasePaging.js';
 import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
 import './styles.css';
@@ -73,7 +74,7 @@ function App() {
     try {
       const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows] = await Promise.all([
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
-        supabase.from('players').select('id,tournament_id,name,is_active,deactivated_at,deactivation_reason,created_at').order('created_at'),
+        supabase.from('players').select('id,tournament_id,name,is_active,hidden_from_public_stats,deactivated_at,deactivation_reason,created_at').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         selectAllRows(() => supabase.from('predictions').select('*').order('submitted_at')),
         optionalSelect(supabase.from('teams').select('*').order('name')),
@@ -135,7 +136,7 @@ function App() {
   const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
   const currentScopedPlayer = scopedPlayers.find((item) => item.id === player?.id) || null;
   const leaderboardRows = useMemo(
-    () => calculateLeaderboard(scopedPlayers, scopedMatches, scopedPredictions),
+    () => calculateLeaderboard(scopedPlayers.filter(isPublicStatsPlayer), scopedMatches, scopedPredictions),
     [scopedPlayers, scopedMatches, scopedPredictions],
   );
   const currentTop10Status = useMemo(
@@ -816,7 +817,7 @@ function MatchesPage({
     const map = new Map();
     predictions.forEach((prediction) => {
       const predictedPlayer = playersById.get(prediction.player_id);
-      if (!isPlayerActive(predictedPlayer)) return;
+      if (!isPublicStatsPlayer(predictedPlayer)) return;
       const rows = map.get(prediction.match_id) || [];
       rows.push(prediction);
       map.set(prediction.match_id, rows);
@@ -1725,9 +1726,10 @@ function buildEventTitle(event) {
 }
 
 function LeaderboardPage({ players, matches, predictions, refresh }) {
-  const rows = calculateLeaderboard(players, matches, predictions);
+  const publicPlayers = players.filter(isPublicStatsPlayer);
+  const rows = calculateLeaderboard(publicPlayers, matches, predictions);
   const visibleRows = rows.filter((row) => row.predictions_submitted_count > 0);
-  const liveRows = calculateLiveLeaderboard(players, matches, predictions);
+  const liveRows = calculateLiveLeaderboard(publicPlayers, matches, predictions);
   return (
     <section>
       <PageTitle title="Leaderboard" action={<button onClick={refresh}>Refresh</button>} />
@@ -1989,6 +1991,9 @@ function StatsPage({
           <p className="muted">
             {stats.rank ? `Rank #${stats.rank} of ${stats.totalPlayers} players with picks.` : 'Submit your first pick to enter the leaderboard.'}
           </p>
+          {displayPlayer.hidden_from_public_stats && (
+            <p className="hidden-stats-note">Hidden from public stats. Your private rank and history stay visible here.</p>
+          )}
         </div>
         <div className="stats-rank-card">
           <span>{currentTop10Status?.status_label || 'Current rank'}</span>
@@ -2455,13 +2460,13 @@ function NationPage({ route, matches, teams, teamFavorites, toggleTeamFavorite, 
   );
 }
 
-function PredictionsPage({ players, matches, predictions, teams, refresh, navigate, routeBase }) {
+function PredictionsPage({ player, players, matches, predictions, teams, refresh, navigate, routeBase }) {
   const [matchView, setMatchView] = useState('upcoming');
   const [expandedMatchIds, setExpandedMatchIds] = useState(() => new Set());
   const [refreshState, setRefreshState] = useState('idle');
   const playersById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
   const activePlayerCount = useMemo(
-    () => players.filter((player) => isPlayerActive(player)).length,
+    () => players.filter((player) => isPublicStatsPlayer(player)).length,
     [players],
   );
   const predictionsByMatch = useMemo(() => {
@@ -2546,6 +2551,7 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
                 match={match}
                 matchPredictions={predictionsByMatch.get(match.id) || []}
                 playersById={playersById}
+                currentPlayerId={player?.id}
                 activePlayerCount={activePlayerCount}
                 teams={teams}
                 navigate={navigate}
@@ -2585,6 +2591,7 @@ function PredictionsPage({ players, matches, predictions, teams, refresh, naviga
                   match={match}
                   matchPredictions={predictionsByMatch.get(match.id) || []}
                   playersById={playersById}
+                  currentPlayerId={player?.id}
                   activePlayerCount={activePlayerCount}
                   teams={teams}
                   navigate={navigate}
@@ -2609,6 +2616,7 @@ function PicksMatchSummary({
   match,
   matchPredictions,
   playersById,
+  currentPlayerId,
   activePlayerCount,
   teams,
   navigate,
@@ -2619,7 +2627,7 @@ function PicksMatchSummary({
 }) {
   const canReveal = isMatchLocked(match);
   const activeSubmittedCount = matchPredictions.filter((prediction) =>
-    isPlayerActive(playersById.get(prediction.player_id)),
+    isPublicStatsPlayer(playersById.get(prediction.player_id)),
   ).length;
   const percent = activePlayerCount ? Math.round((activeSubmittedCount / activePlayerCount) * 100) : 0;
   const hasFinalScore = !live && isMatchPlayed(match) && isFinalScoreComplete(match);
@@ -2661,6 +2669,7 @@ function PicksMatchSummary({
           match={match}
           matchPredictions={matchPredictions}
           playersById={playersById}
+          currentPlayerId={currentPlayerId}
           activeSubmittedCount={activeSubmittedCount}
           activePlayerCount={activePlayerCount}
           canReveal={canReveal}
@@ -2671,7 +2680,7 @@ function PicksMatchSummary({
   );
 }
 
-function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount, activePlayerCount, canReveal, live }) {
+function PicksTable({ match, matchPredictions, playersById, currentPlayerId, activeSubmittedCount, activePlayerCount, canReveal, live }) {
   const liveScoreA = match?.live_team_a_score;
   const liveScoreB = match?.live_team_b_score;
   const hasLiveScore = live && Number.isInteger(liveScoreA) && Number.isInteger(liveScoreB);
@@ -2682,8 +2691,12 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
   const scoreLabel = hasLiveScore ? 'Live score' : 'Final score';
   const pointsLabel = hasLiveScore ? 'Live pts' : 'Points';
   const exactBadgeLabel = hasLiveScore ? 'Exact live score' : 'Exact score';
+  const visiblePredictions = matchPredictions.filter((prediction) => {
+    const predictedPlayer = playersById.get(prediction.player_id);
+    return isPublicStatsPlayer(predictedPlayer) || prediction.player_id === currentPlayerId;
+  });
   const rows = hasRankedScore
-    ? [...matchPredictions].sort((a, b) => {
+    ? [...visiblePredictions].sort((a, b) => {
         const pointsA = hasLiveScore ? livePredictionPoints(a, match) ?? -1 : predictionPoints(a, match);
         const pointsB = hasLiveScore ? livePredictionPoints(b, match) ?? -1 : predictionPoints(b, match);
         if (pointsA !== pointsB) return pointsB - pointsA;
@@ -2691,7 +2704,7 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
           getPlayerDisplayName(playersById.get(b.player_id)),
         );
       })
-    : matchPredictions;
+    : visiblePredictions;
 
   return (
     <div className="picks-expanded">
@@ -2704,7 +2717,7 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
           Score picks stay hidden until kickoff or when the admin locks this match.
         </p>
       )}
-      {matchPredictions.length > 0 && (
+      {visiblePredictions.length > 0 && (
         <div className="table-wrap compact-table">
           <table className={`picks-table${hasRankedScore ? ' live-picks-table' : ''}`}>
             <thead>
@@ -2747,7 +2760,7 @@ function PicksTable({ match, matchPredictions, playersById, activeSubmittedCount
           </table>
         </div>
       )}
-      {matchPredictions.length === 0 && (
+      {visiblePredictions.length === 0 && (
         <p className="muted">No picks submitted for this match yet.</p>
       )}
     </div>
@@ -3356,6 +3369,26 @@ function AdminPlayersPanel({ tournament, players, predictions, matches, refresh,
     }
   };
 
+  const setPublicStatsVisibility = async (player, hidden) => {
+    setMessage('');
+    setError('');
+    setBusy(`visibility-${player.id}`);
+    try {
+      await runAdminPlayersRequest({
+        action: 'set-public-stats-visibility',
+        tournament_id: tournament?.id,
+        player_id: player.id,
+        hidden,
+      });
+      setMessage(hidden ? `${player.name} is hidden from public stats and keeps app access.` : `${player.name} is visible in public stats.`);
+      await refresh();
+    } catch (err) {
+      setError(err.message || 'Could not update public stats visibility.');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <section className="panel admin-players-panel">
       <div className="section-heading">
@@ -3442,6 +3475,7 @@ function AdminPlayersPanel({ tournament, players, predictions, matches, refresh,
             <div>
               <strong>{getPlayerDisplayName(player)}</strong>
               <p>{predictionCounts.get(player.id) || 0} picks · created {formatDate(player.created_at)}</p>
+              {isPlayerActive(player) && player.hidden_from_public_stats && <p>Hidden from public stats, app access kept.</p>}
               {!isPlayerActive(player) && <p>{player.deactivation_reason || 'Inactive player'}</p>}
             </div>
             {isPlayerActive(player) ? (
@@ -3454,6 +3488,15 @@ function AdminPlayersPanel({ tournament, players, predictions, matches, refresh,
                 <button className="danger" onClick={() => deactivate(player)} disabled={busy === player.id}>
                   {busy === player.id ? 'Deactivating...' : 'Deactivate'}
                 </button>
+                {player.hidden_from_public_stats ? (
+                  <button onClick={() => setPublicStatsVisibility(player, false)} disabled={busy === `visibility-${player.id}`}>
+                    {busy === `visibility-${player.id}` ? 'Updating...' : 'Show in public stats'}
+                  </button>
+                ) : (
+                  <button onClick={() => setPublicStatsVisibility(player, true)} disabled={busy === `visibility-${player.id}`}>
+                    {busy === `visibility-${player.id}` ? 'Updating...' : 'Hide from public stats'}
+                  </button>
+                )}
               </div>
             ) : (
               <span className="inactive-pill">Inactive</span>
@@ -3467,9 +3510,12 @@ function AdminPlayersPanel({ tournament, players, predictions, matches, refresh,
 
 function getFamilyKpis({ players = [], matches = [], predictions = [], favorites = [] }) {
   const activePlayers = players.filter(isPlayerActive);
-  const predictionCounts = countBy(predictions, 'player_id');
-  const playersWithPicks = activePlayers.filter((player) => (predictionCounts.get(player.id) || 0) > 0);
-  const topSubmitters = [...activePlayers]
+  const publicPlayers = players.filter(isPublicStatsPlayer);
+  const publicPlayerIds = new Set(publicPlayers.map((player) => player.id));
+  const publicPredictions = predictions.filter((prediction) => publicPlayerIds.has(prediction.player_id));
+  const predictionCounts = countBy(publicPredictions, 'player_id');
+  const playersWithPicks = publicPlayers.filter((player) => (predictionCounts.get(player.id) || 0) > 0);
+  const topSubmitters = [...publicPlayers]
     .map((player) => ({ player, count: predictionCounts.get(player.id) || 0 }))
     .filter((row) => row.count > 0)
     .sort((a, b) => b.count - a.count || getPlayerDisplayName(a.player).localeCompare(getPlayerDisplayName(b.player)));
@@ -3479,9 +3525,9 @@ function getFamilyKpis({ players = [], matches = [], predictions = [], favorites
     activePlayers: activePlayers.length,
     inactivePlayers: players.length - activePlayers.length,
     playersWithPicks: playersWithPicks.length,
-    playersWithoutPicks: Math.max(activePlayers.length - playersWithPicks.length, 0),
-    predictions: predictions.length,
-    avgPicksPerActive: activePlayers.length ? (predictions.length / activePlayers.length).toFixed(1) : '0.0',
+    playersWithoutPicks: Math.max(publicPlayers.length - playersWithPicks.length, 0),
+    predictions: publicPredictions.length,
+    avgPicksPerActive: publicPlayers.length ? (publicPredictions.length / publicPlayers.length).toFixed(1) : '0.0',
     favorites: favorites.length,
     publishedMatches: matches.filter((match) => match.is_published).length,
     openMatches: matches.filter((match) => match.is_published && !isMatchLocked(match)).length,
@@ -3490,7 +3536,7 @@ function getFamilyKpis({ players = [], matches = [], predictions = [], favorites
     topSubmitters,
     lastActivity: latestTimestamp([
       ...players.map((player) => player.created_at),
-      ...predictions.map((prediction) => prediction.updated_at || prediction.submitted_at),
+      ...publicPredictions.map((prediction) => prediction.updated_at || prediction.submitted_at),
       ...favorites.map((favorite) => favorite.created_at),
     ]),
   };
@@ -4331,10 +4377,6 @@ function isMissingOptionalRelation(error) {
   return error.code === 'PGRST205' ||
     error.code === '42P01' ||
     /could not find the table|schema cache|does not exist/i.test(error.message || '');
-}
-
-function isPlayerActive(player) {
-  return player?.is_active !== false;
 }
 
 function getPlayerDisplayName(player) {
