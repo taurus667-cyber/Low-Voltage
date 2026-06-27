@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { isAuthorized } from '../api/sync-live-scores.js';
+import { auditPredictionStyleDistribution } from '../src/lib/predictionStyle.js';
 
 const baseUrl = process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5173';
 const isProdSmoke = Boolean(process.env.SMOKE_BASE_URL);
@@ -515,11 +516,63 @@ async function verifyStatsPage(page) {
 }
 
 async function verifyLeaderboardStyles(page) {
+  seedPredictionStyleSmokeRows();
+  const audit = auditPredictionStyleDistribution({
+    players: smokePlayers,
+    matches: smokeMatches(),
+    predictions: smokePredictions,
+    predictionAids: smokeAids(),
+    matchOdds: smokeOdds(),
+  });
+  if (Object.keys(audit.counts).length <= 1) {
+    throw new Error(`Expected seeded prediction styles to produce more than one category: ${JSON.stringify(audit.counts)}`);
+  }
   await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });
   await expectVisible(page, 'text=Leaderboard');
   await expectVisible(page, 'text=Smoke Tester');
   const badges = await page.locator('.leaderboard-player-main .prediction-style-badge').count();
   if (!badges) throw new Error('Expected prediction style badges on the Leaderboard.');
+}
+
+function seedPredictionStyleSmokeRows() {
+  if (smokePlayers.some((player) => player.id === 'player-style-safe')) return;
+  const players = [
+    ['player-style-safe', 'Style Safe'],
+    ['player-style-steady', 'Style Steady'],
+    ['player-style-balanced', 'Style Balanced'],
+    ['player-style-bold', 'Style Bold'],
+    ['player-style-contrarian', 'Style Contrarian'],
+  ];
+  players.forEach(([id, name]) => smokePlayers.push({
+    id,
+    name,
+    tournament_id: 'tournament-smoke',
+    is_active: true,
+    hidden_from_public_stats: false,
+    created_at: new Date().toISOString(),
+  }));
+  const matchIds = ['match-live', 'match-upcoming', 'match-played', 'match-r32', 'match-r16'];
+  const rows = [
+    ['player-style-safe', 1, 0],
+    ['player-style-steady', 2, 0],
+    ['player-style-balanced', 1, 1],
+    ['player-style-bold', 0, 3],
+    ['player-style-contrarian', 0, 1],
+  ];
+  rows.forEach(([playerId, a, b]) => {
+    matchIds.forEach((matchId) => {
+      smokePredictions.push({
+        id: `prediction-${playerId}-${matchId}`,
+        tournament_id: 'tournament-smoke',
+        player_id: playerId,
+        match_id: matchId,
+        predicted_team_a_score: a,
+        predicted_team_b_score: b,
+        submitted_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    });
+  });
 }
 
 async function verifyHiddenPublicStatsFlow(page) {

@@ -38,15 +38,106 @@ export const PREDICTION_STYLES = {
 };
 
 const MIN_CONFIDENT_PICKS = 5;
+const MIN_CONSENSUS_OTHER_PICKS = 2;
 
-export function buildPredictionStyle({ playerId, players = [], matches = [], predictions = [], predictionAids = [], matchOdds = [] }) {
+export function buildPredictionStyle(args) {
+  return buildPredictionStylesByPlayer(args).get(args.playerId) || createStyle('tactical_fox', emptyMetrics(), {
+    provisional: true,
+    confidence: 'Provisional',
+    score: 0,
+    relativeScore: 0,
+  });
+}
+
+export function buildPredictionStylesByPlayer({ players = [], matches = [], predictions = [], predictionAids = [], matchOdds = [] }) {
   const matchById = new Map(matches.map((match) => [match.id, match]));
   const eligiblePlayerIds = new Set(players.map((player) => player.id));
-  const playerPredictions = predictions.filter((prediction) =>
-    prediction.player_id === playerId && matchById.has(prediction.match_id)
-  );
   const favoriteByMatch = buildFavoriteMap(matches, predictionAids, matchOdds);
-  const consensusByMatch = buildConsensusMap(predictions, eligiblePlayerIds);
+  const playerMetrics = players.map((player) => calculatePlayerMetrics({
+    player,
+    matchById,
+    predictions,
+    favoriteByMatch,
+    eligiblePlayerIds,
+  }));
+  const comparableRows = playerMetrics.filter((row) => row.metrics.pickCount >= MIN_CONFIDENT_PICKS);
+  const rowsForDistribution = comparableRows.length >= 4 ? comparableRows : playerMetrics.filter((row) => row.metrics.pickCount > 0);
+  const riskValues = rowsForDistribution.map((row) => row.metrics.rawRiskScore);
+  const consensusValues = rowsForDistribution.map((row) => row.metrics.consensusDistance);
+  const favoriteValues = rowsForDistribution.map((row) => row.metrics.favoriteAlignment);
+  const marginValues = rowsForDistribution.map((row) => row.metrics.averagePredictedMargin);
+
+  return new Map(playerMetrics.map((row) => {
+    const { player, metrics } = row;
+    const provisional = metrics.pickCount < MIN_CONFIDENT_PICKS;
+    const riskPercentile = percentileRank(riskValues, metrics.rawRiskScore);
+    const consensusPercentile = percentileRank(consensusValues, metrics.consensusDistance);
+    const favoritePercentile = percentileRank(favoriteValues, metrics.favoriteAlignment);
+    const marginPercentile = percentileRank(marginValues, metrics.averagePredictedMargin);
+    const score = Math.round(metrics.rawRiskScore);
+    const relativeScore = Math.round(riskPercentile);
+    const key = chooseStyleKey({
+      provisional,
+      riskPercentile,
+      consensusPercentile,
+      favoritePercentile,
+      marginPercentile,
+      metrics,
+      comparableCount: rowsForDistribution.length,
+    });
+
+    return [player.id, createStyle(key, {
+      ...metrics,
+      riskPercentile: Math.round(riskPercentile),
+      consensusPercentile: Math.round(consensusPercentile),
+      favoritePercentile: Math.round(favoritePercentile),
+      marginPercentile: Math.round(marginPercentile),
+    }, {
+      provisional,
+      confidence: confidenceLabel(metrics),
+      score,
+      relativeScore,
+    })];
+  }));
+}
+
+export function auditPredictionStyleDistribution(args) {
+  const styles = buildPredictionStylesByPlayer(args);
+  const rows = (args.players || [])
+    .map((player) => ({ player, style: styles.get(player.id) }))
+    .filter((row) => row.style && row.style.metrics.pickCount > 0);
+  const counts = rows.reduce((acc, row) => {
+    acc[row.style.key] = (acc[row.style.key] || 0) + 1;
+    return acc;
+  }, {});
+  const ranges = Object.fromEntries([
+    'score',
+    'relativeScore',
+    'pickCount',
+    'favoriteAlignment',
+    'underdogRate',
+    'consensusDistance',
+    'averagePredictedMargin',
+    'drawRate',
+  ].map((field) => {
+    const values = rows.map((row) => field in row.style ? row.style[field] : row.style.metrics[field])
+      .filter((value) => Number.isFinite(value));
+    return [field, summarizeRange(values)];
+  }));
+
+  return {
+    playerCount: args.players?.length || 0,
+    playersWithPicks: rows.length,
+    counts,
+    ranges,
+    collapsed: Object.keys(counts).length <= 1 && rows.length >= 4,
+  };
+}
+
+function calculatePlayerMetrics({ player, matchById, predictions, favoriteByMatch, eligiblePlayerIds }) {
+  const playerPredictions = predictions.filter((prediction) =>
+    prediction.player_id === player.id && matchById.has(prediction.match_id)
+  );
 
   let favoriteComparable = 0;
   let favoriteAligned = 0;
@@ -56,10 +147,14 @@ export function buildPredictionStyle({ playerId, players = [], matches = [], pre
   const margins = [];
 
   playerPredictions.forEach((prediction) => {
-    const match = matchById.get(prediction.match_id);
     const outcome = getPredictionOutcome(prediction);
     const favorite = favoriteByMatch.get(prediction.match_id);
-    const consensus = consensusByMatch.get(prediction.match_id);
+    const consensus = getConsensusOutcome({
+      matchId: prediction.match_id,
+      excludePlayerId: player.id,
+      predictions,
+      eligiblePlayerIds,
+    });
 
     if (favorite && outcome) {
       favoriteComparable += 1;
@@ -84,46 +179,93 @@ export function buildPredictionStyle({ playerId, players = [], matches = [], pre
   const marginVariance = standardDeviation(margins);
   const marginBoldness = clamp((averagePredictedMargin / 3) * 100, 0, 100);
   const varianceBoldness = clamp((marginVariance / 2) * 100, 0, 100);
-  const score = Math.round(
+  const rawRiskScore = Math.round(
     (underdogRate * 0.3) +
     (consensusDistance * 0.25) +
     (marginBoldness * 0.2) +
     (varianceBoldness * 0.15) +
     (drawRate * 0.1),
   );
-  const provisional = pickCount < MIN_CONFIDENT_PICKS;
-  const key = provisional
-    ? 'tactical_fox'
-    : consensusDistance >= 65
-      ? 'lone_wolf'
-      : score >= 55
-        ? 'falcon_striker'
-        : score <= 35 && (!favoriteComparable || favoriteAlignment >= 60)
-          ? 'shield_turtle'
-          : 'tactical_fox';
 
   return {
-    ...PREDICTION_STYLES[key],
-    score,
-    confidence: provisional ? 'Provisional' : 'Established',
-    provisional,
+    player,
     metrics: {
       pickCount,
       favoriteAlignment,
       underdogRate,
       consensusDistance,
+      consensusComparable,
       averagePredictedMargin,
       drawRate,
       marginVariance: round1(marginVariance),
+      rawRiskScore,
     },
   };
 }
 
-export function buildPredictionStylesByPlayer(args) {
-  return new Map((args.players || []).map((player) => [
-    player.id,
-    buildPredictionStyle({ ...args, playerId: player.id }),
-  ]));
+function chooseStyleKey({
+  provisional,
+  riskPercentile,
+  consensusPercentile,
+  favoritePercentile,
+  marginPercentile,
+  metrics,
+  comparableCount,
+}) {
+  if (metrics.pickCount === 0) return 'tactical_fox';
+  if (provisional) {
+    if (metrics.pickCount < 3) return 'tactical_fox';
+    if (metrics.consensusComparable >= 3 && metrics.consensusDistance >= 67) return 'lone_wolf';
+    if (metrics.underdogRate >= 67 || metrics.averagePredictedMargin >= 3) return 'falcon_striker';
+    if (metrics.favoriteAlignment >= 75 && metrics.averagePredictedMargin <= 1.5) return 'shield_turtle';
+    return 'tactical_fox';
+  }
+  if (comparableCount < 4) {
+    if (metrics.consensusDistance >= 60) return 'lone_wolf';
+    if (metrics.rawRiskScore >= 55 || metrics.underdogRate >= 55) return 'falcon_striker';
+    if (metrics.favoriteAlignment >= 70 && metrics.rawRiskScore <= 35) return 'shield_turtle';
+    return 'tactical_fox';
+  }
+  if (riskPercentile >= 78 && (marginPercentile >= 70 || metrics.averagePredictedMargin >= 2.5)) return 'falcon_striker';
+  if (consensusPercentile >= 82 && metrics.consensusDistance >= 20) return 'lone_wolf';
+  if (riskPercentile >= 78 && metrics.underdogRate >= 35) return 'falcon_striker';
+  if (riskPercentile <= 35 && favoritePercentile >= 55) return 'shield_turtle';
+  return 'tactical_fox';
+}
+
+function createStyle(key, metrics, { provisional, confidence, score, relativeScore }) {
+  return {
+    ...PREDICTION_STYLES[key],
+    score,
+    relativeScore,
+    confidence,
+    provisional,
+    metrics,
+  };
+}
+
+function confidenceLabel(metrics) {
+  if (metrics.pickCount < MIN_CONFIDENT_PICKS) return 'Provisional';
+  if (metrics.pickCount < 10 || metrics.consensusComparable < 5) return 'Medium';
+  return 'Established';
+}
+
+function emptyMetrics() {
+  return {
+    pickCount: 0,
+    favoriteAlignment: 0,
+    underdogRate: 0,
+    consensusDistance: 0,
+    consensusComparable: 0,
+    averagePredictedMargin: 0,
+    drawRate: 0,
+    marginVariance: 0,
+    rawRiskScore: 0,
+    riskPercentile: 0,
+    consensusPercentile: 0,
+    favoritePercentile: 0,
+    marginPercentile: 0,
+  };
 }
 
 function buildFavoriteMap(matches, predictionAids, matchOdds) {
@@ -165,22 +307,23 @@ function favoriteFromAids(match, aids) {
   return null;
 }
 
-function buildConsensusMap(predictions, eligiblePlayerIds) {
-  const countsByMatch = new Map();
+function getConsensusOutcome({ matchId, excludePlayerId, predictions, eligiblePlayerIds }) {
+  const counts = { home: 0, draw: 0, away: 0 };
+  let total = 0;
   predictions.forEach((prediction) => {
+    if (prediction.match_id !== matchId) return;
+    if (prediction.player_id === excludePlayerId) return;
     if (eligiblePlayerIds.size && !eligiblePlayerIds.has(prediction.player_id)) return;
     const outcome = getPredictionOutcome(prediction);
     if (!outcome) return;
-    const counts = countsByMatch.get(prediction.match_id) || { home: 0, draw: 0, away: 0 };
     counts[outcome] += 1;
-    countsByMatch.set(prediction.match_id, counts);
+    total += 1;
   });
-  return new Map([...countsByMatch.entries()].map(([matchId, counts]) => {
-    const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a);
-    if (!sorted[0]?.[1]) return [matchId, null];
-    if (sorted[0][1] === sorted[1]?.[1]) return [matchId, null];
-    return [matchId, sorted[0][0]];
-  }));
+  if (total < MIN_CONSENSUS_OTHER_PICKS) return null;
+  const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a);
+  if (!sorted[0]?.[1]) return null;
+  if (sorted[0][1] === sorted[1]?.[1]) return null;
+  return sorted[0][0];
 }
 
 function getPredictionOutcome(prediction) {
@@ -195,6 +338,24 @@ function getPredictionOutcome(prediction) {
 function parseDecimalOdd(value) {
   const parsed = Number.parseFloat(String(value || '').replace(',', '.'));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function percentileRank(values, value) {
+  const sorted = values.filter((item) => Number.isFinite(item)).sort((a, b) => a - b);
+  if (!sorted.length) return 50;
+  if (sorted.length === 1) return value >= sorted[0] ? 100 : 0;
+  const below = sorted.filter((item) => item < value).length;
+  const equal = sorted.filter((item) => item === value).length;
+  return ((below + (equal / 2)) / sorted.length) * 100;
+}
+
+function summarizeRange(values) {
+  if (!values.length) return { min: 0, max: 0, avg: 0 };
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+    avg: round1(values.reduce((sum, value) => sum + value, 0) / values.length),
+  };
 }
 
 function percent(value, total) {

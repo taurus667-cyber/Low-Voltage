@@ -2178,18 +2178,20 @@ function PredictionStylePanel({ style }) {
         <span><strong>{style.metrics.consensusDistance}%</strong> from family consensus</span>
         <span><strong>{style.metrics.averagePredictedMargin}</strong> avg goal margin</span>
         <span><strong>{style.metrics.drawRate}%</strong> draw picks</span>
-        <span><strong>{style.score}</strong> risk score</span>
+        <span><strong>{style.relativeScore}</strong> group risk percentile</span>
       </div>
       <details className="prediction-style-explainer">
         <summary>How this is calculated</summary>
         <p>
           This style compares your submitted picks with available favorite signals, the family&apos;s most common
-          prediction outcome, your predicted goal margins, draw frequency, and scoreline variance.
+          prediction outcome, your predicted goal margins, draw frequency, and scoreline variance. The final badge
+          is relative to this family&apos;s prediction patterns, so it shows how your style compares with the group.
         </p>
         <p>
           Favorite alignment means choosing the team favored by available match insight or odds data. Consensus
           distance means how often your predicted outcome differs from the family&apos;s most common pick for that
-          match. Boldness comes from underdog picks, draws, wider margins, and variable scorelines.
+          match, excluding your own pick. Boldness comes from underdog picks, draws, wider margins, and variable
+          scorelines.
         </p>
         <p>
           The labels are based on prediction behavior under uncertainty, inspired by prospect theory,
