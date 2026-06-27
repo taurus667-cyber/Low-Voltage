@@ -183,6 +183,23 @@ export function matchProviderFixturesToSlots(providerFixtures = [], existingRows
     });
   });
 
+  const remainingFixturesByRound = groupFixturesByRound(
+    providerFixtures.filter((fixture) => !usedFixtureIds.has(getProviderFixtureId(fixture))),
+  );
+  const remainingSlotsByRound = groupSlotsByRound(
+    OFFICIAL_KNOCKOUT_PLACEHOLDERS.filter((slot) => !matches.has(slot.bracket_slot)),
+  );
+
+  remainingFixturesByRound.forEach((fixtures, roundKey) => {
+    const slots = remainingSlotsByRound.get(roundKey) || [];
+    fixtures.forEach((fixture, index) => {
+      const slot = slots[index];
+      if (!slot || matches.has(slot.bracket_slot)) return;
+      matches.set(slot.bracket_slot, fixture);
+      usedFixtureIds.add(getProviderFixtureId(fixture));
+    });
+  });
+
   return matches;
 }
 
@@ -263,6 +280,30 @@ function groupFixturesByRoundDate(fixtures) {
     const date = fixture.fixture?.date?.slice(0, 10);
     if (!date) return;
     const key = `${providerRoundKey(fixture)}:${date}`;
+    const rows = groups.get(key) || [];
+    rows.push(fixture);
+    rows.sort(compareProviderFixtures);
+    groups.set(key, rows);
+  });
+  return groups;
+}
+
+function groupSlotsByRound(slots) {
+  const groups = new Map();
+  slots.forEach((slot) => {
+    const rows = groups.get(slot.bracket_round) || [];
+    rows.push(slot);
+    rows.sort(compareSlots);
+    groups.set(slot.bracket_round, rows);
+  });
+  return groups;
+}
+
+function groupFixturesByRound(fixtures) {
+  const groups = new Map();
+  fixtures.forEach((fixture) => {
+    const key = providerRoundKey(fixture);
+    if (!key) return;
     const rows = groups.get(key) || [];
     rows.push(fixture);
     rows.sort(compareProviderFixtures);

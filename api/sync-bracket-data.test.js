@@ -142,6 +142,32 @@ test('existing provider fixture id is preferred over date order', () => {
   assert.equal(matches.get('M73').teams.home.name, 'Earlier');
 });
 
+test('round-level chronological fallback matches provider fixtures that overflow official date buckets', () => {
+  const providerFixtures = [
+    providerFixture({ id: 1561329, date: '2026-06-28T19:00:00+00:00', round: 'Round of 32', home: 'South Africa', away: 'Canada' }),
+    providerFixture({ id: 1562344, date: '2026-06-29T17:00:00+00:00', round: 'Round of 32', home: 'Brazil', away: 'Japan' }),
+    providerFixture({ id: 1565176, date: '2026-06-29T20:30:00+00:00', round: 'Round of 32', home: 'Germany', away: 'Paraguay' }),
+    providerFixture({ id: 1562345, date: '2026-06-30T01:00:00+00:00', round: 'Round of 32', home: 'Netherlands', away: 'Morocco' }),
+    providerFixture({ id: 1564789, date: '2026-06-30T17:00:00+00:00', round: 'Round of 32', home: 'Ivory Coast', away: 'Norway' }),
+    providerFixture({ id: 1565177, date: '2026-06-30T21:00:00+00:00', round: 'Round of 32', home: 'France', away: 'Sweden' }),
+    providerFixture({ id: 1562586, date: '2026-07-02T00:00:00+00:00', round: 'Round of 32', home: 'USA', away: 'Bosnia & Herzegovina' }),
+    providerFixture({ id: 1565178, date: '2026-07-03T18:00:00+00:00', round: 'Round of 32', home: 'Australia', away: 'Egypt' }),
+    providerFixture({ id: 1565179, date: '2026-07-03T22:00:00+00:00', round: 'Round of 32', home: 'Argentina', away: 'Cape Verde Islands' }),
+  ];
+
+  const { rows, matchedProviderFixtureIds, unmatchedProviderFixtures } = buildBracketRows({
+    existingRows: new Map(),
+    providerFixtures,
+    tournament: { id: 'tournament-1' },
+    now: '2026-06-27T12:00:00.000Z',
+  });
+
+  assert.equal(matchedProviderFixtureIds.size, 9);
+  assert.equal(unmatchedProviderFixtures.length, 0);
+  assert.equal(rows.filter((row) => row.is_published).length, 9);
+  assert.equal(rows.some((row) => row.team_a === 'France' && row.team_b === 'Sweden'), true);
+});
+
 function providerFixture({
   id,
   date,
