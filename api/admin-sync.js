@@ -15,17 +15,27 @@ export default async function handler(request, response) {
   try {
     const body = await getRequestBody(request);
     const sync = SYNC_TYPES.has(body.sync) ? body.sync : 'all';
-    const result = {};
-
-    if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematchSync();
-    if (sync === 'bracket' || sync === 'all') result.bracket = await runBracketSync();
-    if (sync === 'live' || sync === 'all') result.live = await runLiveScoreSync();
-    result.clones = result.live?.clones || result.prematch?.clones || result.bracket?.clones || await refreshLinkedClones();
+    const result = await runAdminSync(sync);
 
     return response.status(200).json({ sync, ...result });
   } catch (error) {
     return response.status(500).json({ error: toPublicErrorMessage(error) });
   }
+}
+
+export async function runAdminSync(sync, runners = {}) {
+  const runBracket = runners.runBracketSync || runBracketSync;
+  const runPrematch = runners.runPrematchSync || runPrematchSync;
+  const runLive = runners.runLiveScoreSync || runLiveScoreSync;
+  const refreshClones = runners.refreshLinkedClones || refreshLinkedClones;
+  const result = {};
+
+  if (sync === 'bracket' || sync === 'all') result.bracket = await runBracket();
+  if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematch();
+  if (sync === 'live' || sync === 'all') result.live = await runLive();
+  result.clones = result.live?.clones || result.prematch?.clones || result.bracket?.clones || await refreshClones();
+
+  return result;
 }
 
 async function refreshLinkedClones() {

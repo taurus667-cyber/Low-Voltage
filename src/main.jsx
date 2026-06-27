@@ -3171,9 +3171,6 @@ function AdminTools({
       if (!response.ok) throw new Error(payload.error || 'Manual sync failed.');
 
       const parts = [];
-      if (payload.prematch) {
-        parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
-      }
       if (payload.bracket) {
         const bracketParts = [
           `bracket ${payload.bracket.concrete || 0} concrete`,
@@ -3186,6 +3183,9 @@ function AdminTools({
           bracketParts.push(`${payload.bracket.unmatchedProviderFixtures.length} unmatched`);
         }
         parts.push(bracketParts.join(', '));
+      }
+      if (payload.prematch) {
+        parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
       }
       if (payload.live) {
         parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}, top 10 new ${payload.live.top10?.created || 0}`);
@@ -3299,7 +3299,7 @@ function AdminTools({
               {syncing === 'live' ? 'Syncing live...' : 'Sync live/recaps'}
             </button>
             <button className="primary" onClick={() => runManualSync('all')} disabled={Boolean(syncing)}>
-              {syncing === 'all' ? 'Syncing...' : 'Sync both'}
+              {syncing === 'all' ? 'Syncing all...' : 'Sync all'}
             </button>
           </div>
           <label>
