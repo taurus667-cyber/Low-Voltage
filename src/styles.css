@@ -1986,6 +1986,145 @@ th {
   color: #372600;
 }
 
+.leaderboard-bonus-note,
+.champion-current-pick {
+  border: 1px solid #cce3dc;
+  border-radius: 8px;
+  background: #eef8f5;
+  color: #24564d;
+  padding: 0.8rem 1rem;
+  font-weight: 800;
+}
+
+.champion-bonus-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.champion-bonus-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.champion-bonus-hero h2 {
+  margin-bottom: 0.4rem;
+  font-size: clamp(1.8rem, 6vw, 3rem);
+}
+
+.champion-bonus-status,
+.champion-potential {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 160px;
+  border: 1px solid #cfe0da;
+  border-radius: 8px;
+  background: #f7fbfa;
+  padding: 0.85rem;
+}
+
+.champion-bonus-status span,
+.champion-potential span,
+.champion-team-title span,
+.champion-picker-list > span {
+  color: #63766f;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.champion-bonus-status strong,
+.champion-potential strong {
+  color: #0f766e;
+  font-size: 1.4rem;
+}
+
+.champion-bonus-status em {
+  color: #63766f;
+  font-style: normal;
+  font-size: 0.85rem;
+}
+
+.champion-current-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.champion-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.85rem;
+}
+
+.champion-team-card {
+  display: grid;
+  gap: 0.85rem;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.9rem;
+  box-shadow: 0 10px 26px rgba(33, 57, 50, 0.07);
+}
+
+.champion-team-card.selected {
+  border-color: #0f766e;
+  box-shadow: 0 12px 30px rgba(15, 118, 110, 0.16);
+}
+
+.champion-team-card.placeholder {
+  background: #f8fbfa;
+}
+
+.champion-team-main,
+.champion-team-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.champion-team-main {
+  justify-content: space-between;
+}
+
+.champion-team-title {
+  min-width: 0;
+}
+
+.champion-team-title .team-flag,
+.champion-team-title .flag-placeholder {
+  width: 48px;
+  height: 34px;
+}
+
+.champion-team-title > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.champion-team-title strong {
+  overflow-wrap: anywhere;
+}
+
+.champion-potential {
+  min-width: 96px;
+  padding: 0.55rem 0.65rem;
+  text-align: right;
+}
+
+.champion-picker-list {
+  display: grid;
+  gap: 0.45rem;
+  min-height: 72px;
+}
+
+.champion-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
 .stats-page {
   display: grid;
   gap: 1rem;
@@ -2821,6 +2960,8 @@ th {
   .hero,
   .admin-grid,
   .stats-hero,
+  .champion-bonus-hero,
+  .champion-admin-grid,
   .stats-layout,
   .prediction-style-hero,
   .prediction-style-copy,
@@ -2842,6 +2983,7 @@ th {
 
   .score-row,
   .two-col,
+  .champion-team-main,
   .stats-distance-grid,
   .prediction-style-metrics,
   .help-actions,
@@ -2862,6 +3004,17 @@ th {
 
   .help-link-list button {
     justify-self: stretch;
+  }
+
+  .champion-team-main,
+  .champion-current-pick {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .champion-potential {
+    width: 100%;
+    text-align: left;
   }
 
   .teams,

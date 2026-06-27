@@ -91,6 +91,7 @@ export async function createCloneGroup(supabase, body) {
       api_football_season: source.api_football_season,
       timezone: source.timezone,
       branding_text: source.branding_text || 'Private group clone',
+      ...getChampionBonusTournamentFields(source),
       is_active: false,
       is_clone: true,
       source_tournament_id: source.id,
@@ -151,6 +152,7 @@ async function fetchSourceTournament(supabase, id) {
 }
 
 async function copySourceFootballData(supabase, sourceTournamentId, targetTournamentId) {
+  const source = await fetchSourceTournament(supabase, sourceTournamentId);
   const teams = await copyTeams(supabase, sourceTournamentId, targetTournamentId);
   const { matchMap, matches } = await copyMatches(supabase, sourceTournamentId, targetTournamentId);
   const childCounts = {};
@@ -160,7 +162,10 @@ async function copySourceFootballData(supabase, sourceTournamentId, targetTourna
   const refreshedAt = new Date().toISOString();
   const { error } = await supabase
     .from('tournaments')
-    .update({ last_internal_refresh_at: refreshedAt })
+    .update({
+      ...getChampionBonusTournamentFields(source),
+      last_internal_refresh_at: refreshedAt,
+    })
     .eq('id', targetTournamentId);
   if (error) throw error;
   return { teams, matches, ...childCounts, refreshedAt };
@@ -248,6 +253,20 @@ async function replaceChildRows(supabase, table, sourceTournamentId, targetTourn
   const { error: insertError } = await supabase.from(table).insert(rows);
   if (insertError) throw insertError;
   return rows.length;
+}
+
+function getChampionBonusTournamentFields(source) {
+  const fields = {};
+  if (Object.prototype.hasOwnProperty.call(source, 'champion_bonus_lock_at')) {
+    fields.champion_bonus_lock_at = source.champion_bonus_lock_at || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'champion_bonus_winner_team_slug')) {
+    fields.champion_bonus_winner_team_slug = source.champion_bonus_winner_team_slug || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, 'champion_bonus_winner_team_name')) {
+    fields.champion_bonus_winner_team_name = source.champion_bonus_winner_team_name || null;
+  }
+  return fields;
 }
 
 function normalizeSlug(value) {

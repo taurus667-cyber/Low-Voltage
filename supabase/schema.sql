@@ -12,6 +12,9 @@ create table if not exists public.tournaments (
   source_tournament_id uuid references public.tournaments(id) on delete set null,
   parent_tournament_id uuid references public.tournaments(id) on delete set null,
   last_internal_refresh_at timestamp with time zone,
+  champion_bonus_lock_at timestamp with time zone default '2026-06-28T16:00:00Z',
+  champion_bonus_winner_team_slug text,
+  champion_bonus_winner_team_name text,
   is_active boolean default false,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
@@ -90,6 +93,9 @@ alter table public.tournaments add column if not exists is_clone boolean not nul
 alter table public.tournaments add column if not exists source_tournament_id uuid references public.tournaments(id) on delete set null;
 alter table public.tournaments add column if not exists parent_tournament_id uuid references public.tournaments(id) on delete set null;
 alter table public.tournaments add column if not exists last_internal_refresh_at timestamp with time zone;
+alter table public.tournaments add column if not exists champion_bonus_lock_at timestamp with time zone default '2026-06-28T16:00:00Z';
+alter table public.tournaments add column if not exists champion_bonus_winner_team_slug text;
+alter table public.tournaments add column if not exists champion_bonus_winner_team_name text;
 alter table public.matches add column if not exists source_match_id uuid references public.matches(id) on delete set null;
 alter table public.matches add column if not exists bracket_round text;
 alter table public.matches add column if not exists bracket_slot text;
@@ -245,6 +251,19 @@ create table if not exists public.standings_checks (
   created_at timestamp with time zone not null default now()
 );
 
+create table if not exists public.champion_winner_picks (
+  id uuid primary key default gen_random_uuid(),
+  tournament_id uuid references public.tournaments(id) on delete cascade,
+  player_id uuid references public.players(id) on delete cascade,
+  team_slug text not null,
+  team_name text not null,
+  team_country_code text,
+  team_flag_url text,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now(),
+  unique(player_id, tournament_id)
+);
+
 create table if not exists public.top10_player_codes (
   id uuid primary key default gen_random_uuid(),
   tournament_id uuid references public.tournaments(id) on delete cascade,
@@ -290,6 +309,8 @@ create index if not exists idx_match_prediction_aids_match_id on public.match_pr
 create index if not exists idx_match_odds_match_id on public.match_odds (match_id);
 create index if not exists idx_teams_slug on public.teams (slug);
 create index if not exists idx_player_favorite_teams_player_id on public.player_favorite_teams (player_id);
+create index if not exists idx_champion_winner_picks_tournament_id on public.champion_winner_picks (tournament_id);
+create index if not exists idx_champion_winner_picks_player_id on public.champion_winner_picks (player_id);
 create index if not exists idx_standings_checks_tournament_checked_at on public.standings_checks (tournament_id, checked_at desc);
 create index if not exists idx_top10_player_codes_tournament_id on public.top10_player_codes (tournament_id);
 
@@ -354,6 +375,11 @@ create trigger set_predictions_updated_at
 before update on public.predictions
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_champion_winner_picks_updated_at on public.champion_winner_picks;
+create trigger set_champion_winner_picks_updated_at
+before update on public.champion_winner_picks
+for each row execute function public.set_updated_at();
+
 drop trigger if exists prevent_closed_match_prediction_inserts on public.predictions;
 create trigger prevent_closed_match_prediction_inserts
 before insert on public.predictions
@@ -370,6 +396,7 @@ alter table public.matches enable row level security;
 alter table public.predictions enable row level security;
 alter table public.teams enable row level security;
 alter table public.player_favorite_teams enable row level security;
+alter table public.champion_winner_picks enable row level security;
 alter table public.match_events enable row level security;
 alter table public.match_statistics enable row level security;
 alter table public.match_lineups enable row level security;
@@ -413,6 +440,50 @@ drop policy if exists "player_favorite_teams_insert_all" on public.player_favori
 create policy "player_favorite_teams_insert_all" on public.player_favorite_teams for insert with check (true);
 drop policy if exists "player_favorite_teams_delete_all" on public.player_favorite_teams;
 create policy "player_favorite_teams_delete_all" on public.player_favorite_teams for delete using (true);
+
+drop policy if exists "champion_winner_picks_select_all" on public.champion_winner_picks;
+create policy "champion_winner_picks_select_all" on public.champion_winner_picks for select using (true);
+drop policy if exists "champion_winner_picks_insert_before_lock" on public.champion_winner_picks;
+create policy "champion_winner_picks_insert_before_lock" on public.champion_winner_picks
+for insert
+with check (
+  exists (
+    select 1 from public.players
+    where players.id = champion_winner_picks.player_id
+      and players.is_active = true
+      and players.tournament_id is not distinct from champion_winner_picks.tournament_id
+  )
+  and
+  exists (
+    select 1 from public.tournaments
+    where tournaments.id is not distinct from champion_winner_picks.tournament_id
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+  )
+);
+drop policy if exists "champion_winner_picks_update_before_lock" on public.champion_winner_picks;
+create policy "champion_winner_picks_update_before_lock" on public.champion_winner_picks
+for update
+using (
+  exists (
+    select 1 from public.tournaments
+    where tournaments.id is not distinct from champion_winner_picks.tournament_id
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+  )
+)
+with check (
+  exists (
+    select 1 from public.players
+    where players.id = champion_winner_picks.player_id
+      and players.is_active = true
+      and players.tournament_id is not distinct from champion_winner_picks.tournament_id
+  )
+  and
+  exists (
+    select 1 from public.tournaments
+    where tournaments.id is not distinct from champion_winner_picks.tournament_id
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+  )
+);
 drop policy if exists "match_events_select_all" on public.match_events;
 create policy "match_events_select_all" on public.match_events for select using (true);
 drop policy if exists "match_statistics_select_all" on public.match_statistics;

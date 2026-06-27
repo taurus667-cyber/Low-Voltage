@@ -23,6 +23,7 @@ const page = await browser.newPage();
 const fatalConsole = [];
 const smokePlayers = [];
 const smokePredictions = [];
+const smokeChampionPicks = [];
 page.on('console', (message) => {
   if (message.type() === 'error') fatalConsole.push(message.text());
 });
@@ -112,6 +113,32 @@ try {
     }
     return route.continue();
   });
+  await page.route('**/rest/v1/champion_winner_picks*', async (route) => {
+    if (isProdSmoke) return route.continue();
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill(json(smokeChampionPicks));
+    if (['POST', 'PATCH'].includes(request.method())) {
+      const payload = request.postDataJSON();
+      const rows = Array.isArray(payload) ? payload : [payload];
+      rows.forEach((row) => {
+        const existingIndex = smokeChampionPicks.findIndex(
+          (pick) => pick.player_id === row.player_id && pick.tournament_id === row.tournament_id,
+        );
+        const next = {
+          id: existingIndex >= 0 ? smokeChampionPicks[existingIndex].id : `champion-pick-${smokeChampionPicks.length + 1}`,
+          created_at: existingIndex >= 0 ? smokeChampionPicks[existingIndex].created_at : new Date().toISOString(),
+          ...row,
+          updated_at: new Date().toISOString(),
+        };
+        if (existingIndex >= 0) smokeChampionPicks[existingIndex] = next;
+        else smokeChampionPicks.push(next);
+      });
+      return route.fulfill(json(rows.map((row) => smokeChampionPicks.find(
+        (pick) => pick.player_id === row.player_id && pick.tournament_id === row.tournament_id,
+      ))));
+    }
+    return route.continue();
+  });
   await page.route('**/rest/v1/teams*', async (route) => {
     if (isProdSmoke) return route.continue();
     return route.fulfill(json(smokeTeams()));
@@ -164,6 +191,7 @@ try {
     await verifyBracketPage(page);
     await page.goto(`${baseUrl}/matches`, { waitUntil: 'networkidle' });
     await verifyPredictionSubmit(page, { scoreA: '3', scoreB: '2', buttonName: 'Update prediction' });
+    await verifyChampionBonusPage(page);
     await verifyStatsPage(page);
     await verifyLeaderboardStyles(page);
     await verifyHiddenPublicStatsFlow(page);
@@ -174,9 +202,9 @@ try {
     await expectVisible(page, 'text=Matches');
   }
 
-  for (const route of ['/predictions', '/stats', '/groups', '/bracket', '/leaderboard', '/admin']) {
+  for (const route of ['/predictions', '/stats', '/champion-bonus', '/groups', '/bracket', '/leaderboard', '/admin']) {
     await page.goto(`${baseUrl}${route}`, { waitUntil: 'networkidle' });
-    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/stats' ? 'text=My Stats' : route === '/groups' ? 'text=Groups' : route === '/bracket' ? 'text=Bracket' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
+    await expectVisible(page, route === '/predictions' ? 'text=Picks' : route === '/stats' ? 'text=My Stats' : route === '/champion-bonus' ? 'text=Champion Bonus' : route === '/groups' ? 'text=Groups' : route === '/bracket' ? 'text=Bracket' : route === '/leaderboard' ? 'text=Leaderboard' : 'text=Admin');
   }
 
   if (isProdSmoke) {
@@ -325,6 +353,9 @@ function smokeTournament() {
     api_football_season: '2026',
     timezone: 'UTC',
     branding_text: 'Private friends group',
+    champion_bonus_lock_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+    champion_bonus_winner_team_slug: null,
+    champion_bonus_winner_team_name: null,
     is_active: true,
   };
 }
@@ -532,6 +563,26 @@ async function verifyLeaderboardStyles(page) {
   await expectVisible(page, 'text=Smoke Tester');
   const badges = await page.locator('.leaderboard-player-main .prediction-style-badge').count();
   if (!badges) throw new Error('Expected prediction style badges on the Leaderboard.');
+}
+
+async function verifyChampionBonusPage(page) {
+  const smokePlayer = smokePlayers.find((player) => player.name === 'Smoke Tester');
+  if (!smokePlayer) throw new Error('Expected Smoke Tester player before champion bonus smoke.');
+  await page.goto(`${baseUrl}/champion-bonus`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Champion Bonus');
+  await expectVisible(page, 'text=World Cup winner bonus');
+  await expectVisible(page, 'text=Argentina');
+  await expectVisible(page, 'text=Brazil');
+  await page.locator('.champion-team-card', { hasText: 'Brazil' }).getByRole('button', { name: 'Pick champion' }).click();
+  await expectVisible(page, 'text=Champion bonus pick saved: Brazil.');
+  await expectVisible(page, 'text=Your champion pick');
+  await expectVisible(page, 'text=Selected');
+  if (!smokeChampionPicks.some((pick) => pick.player_id === smokePlayer.id && pick.team_slug === 'brazil')) {
+    throw new Error('Expected champion winner pick to be written.');
+  }
+  await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });
+  await expectVisible(page, 'text=Potential Bonus');
+  await expectVisible(page, 'text=Projected Total');
 }
 
 function seedPredictionStyleSmokeRows() {

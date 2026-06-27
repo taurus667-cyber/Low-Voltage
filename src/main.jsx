@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
-import { calculateLeaderboard, getLeaderboardRankStatus, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
+import { getLeaderboardRankStatus, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
 import { getActiveTournament, getTournamentBySlug, scopedRows } from './lib/tournament.js';
 import {
@@ -36,6 +36,15 @@ import { PREDICTION_STYLES, buildPredictionStyle, buildPredictionStylesByPlayer 
 import { isPlayerActive, isPublicStatsPlayer } from './lib/playerVisibility.js';
 import { selectAllRows } from './lib/supabasePaging.js';
 import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
+import {
+  buildChampionBonusLeaderboard,
+  buildChampionBonusTeams,
+  calculateChampionBonus,
+  getChampionBonusLockAt,
+  getCurrentChampionPick,
+  getPotentialBonusForTeam,
+  isChampionBonusLocked,
+} from './lib/championBonus.js';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -54,6 +63,7 @@ function App() {
   const [tournaments, setTournaments] = useState([]);
   const [teams, setTeams] = useState([]);
   const [teamFavorites, setTeamFavorites] = useState([]);
+  const [championPicks, setChampionPicks] = useState([]);
   const [matchEvents, setMatchEvents] = useState([]);
   const [matchStatistics, setMatchStatistics] = useState([]);
   const [matchLineups, setMatchLineups] = useState([]);
@@ -74,13 +84,14 @@ function App() {
     setLoading(true);
     setError('');
     try {
-      const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows] = await Promise.all([
+      const [tournamentRows, playerRows, matchRows, predictionRows, teamRows, favoriteRows, championPickRows] = await Promise.all([
         optionalSelect(supabase.from('tournaments').select('*').order('created_at')),
         supabase.from('players').select('id,tournament_id,name,is_active,hidden_from_public_stats,deactivated_at,deactivation_reason,created_at').order('created_at'),
         supabase.from('matches').select('*').order('kickoff_time'),
         selectAllRows(() => supabase.from('predictions').select('*').order('submitted_at')),
         optionalSelect(supabase.from('teams').select('*').order('name')),
         optionalSelect(supabase.from('player_favorite_teams').select('*').order('created_at')),
+        optionalSelect(supabase.from('champion_winner_picks').select('*').order('updated_at')),
       ]);
       throwIfError(playerRows.error);
       throwIfError(matchRows.error);
@@ -113,6 +124,7 @@ function App() {
       setPredictions(predictionRows.data || []);
       setTeams(teamRows.data || []);
       setTeamFavorites(favoriteRows.data || []);
+      setChampionPicks(championPickRows.data || []);
       setMatchEvents(eventRows.data || []);
       setMatchStatistics(statisticRows.data || []);
       setMatchLineups(lineupRows.data || []);
@@ -141,10 +153,18 @@ function App() {
   const scopedPredictions = scopedRows(predictions, activeTournament);
   const scopedTeams = scopedRows(teams, activeTournament);
   const scopedTeamFavorites = scopedRows(teamFavorites, activeTournament);
+  const scopedChampionPicks = scopedRows(championPicks, activeTournament);
   const currentScopedPlayer = scopedPlayers.find((item) => item.id === player?.id) || null;
   const leaderboardRows = useMemo(
-    () => calculateLeaderboard(scopedPlayers.filter(isPublicStatsPlayer), scopedMatches, scopedPredictions),
-    [scopedPlayers, scopedMatches, scopedPredictions],
+    () => buildChampionBonusLeaderboard({
+      players: scopedPlayers.filter(isPublicStatsPlayer),
+      matches: scopedMatches,
+      predictions: scopedPredictions,
+      picks: scopedChampionPicks,
+      tournament: activeTournament,
+      publicOnly: true,
+    }),
+    [scopedPlayers, scopedMatches, scopedPredictions, scopedChampionPicks, activeTournament],
   );
   const currentTop10Status = useMemo(
     () => getPlayerTop10Status(leaderboardRows, currentScopedPlayer?.id),
@@ -271,6 +291,7 @@ function App() {
     predictions: scopedPredictions,
     teams: scopedTeams,
     teamFavorites: scopedTeamFavorites,
+    championPicks: scopedChampionPicks,
     toggleTeamFavorite,
     tournament: activeTournament,
     tournaments,
@@ -279,6 +300,7 @@ function App() {
     allMatches: matches,
     allPredictions: predictions,
     allTeamFavorites: teamFavorites,
+    allChampionPicks: championPicks,
     routeBase,
     matchEvents: scopedRows(matchEvents, activeTournament),
     matchStatistics: scopedRows(matchStatistics, activeTournament),
@@ -326,6 +348,9 @@ function App() {
           <button className={pageRoute === '/stats' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/stats'))}>
             My Stats
           </button>
+          <button className={pageRoute === '/champion-bonus' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/champion-bonus'))}>
+            Champion Bonus
+          </button>
           <button className={pageRoute === '/groups' ? 'active' : ''} onClick={() => navigate(buildRoute(routeBase, '/groups'))}>
             Groups
           </button>
@@ -357,6 +382,7 @@ function App() {
         {pageRoute === '/matches' && <MatchesPage {...pageProps} />}
         {pageRoute === '/predictions' && <PredictionsPage {...pageProps} />}
         {pageRoute === '/stats' && <StatsPage {...pageProps} storedPlayer={player} />}
+        {pageRoute === '/champion-bonus' && <ChampionBonusPage {...pageProps} />}
         {pageRoute === '/groups' && <GroupsPage {...pageProps} />}
         {pageRoute === '/bracket' && <BracketPage {...pageProps} />}
         {pageRoute === '/favorites' && <FavoritesPage {...pageProps} />}
@@ -1732,9 +1758,17 @@ function buildEventTitle(event) {
   return parts.join(' · ');
 }
 
-function LeaderboardPage({ players, matches, predictions, predictionAids, matchOdds, refresh }) {
+function LeaderboardPage({ players, matches, predictions, championPicks, tournament, predictionAids, matchOdds, refresh }) {
   const publicPlayers = players.filter(isPublicStatsPlayer);
-  const rows = calculateLeaderboard(publicPlayers, matches, predictions);
+  const bonusRows = useMemo(
+    () => buildChampionBonusLeaderboard({ players: publicPlayers, matches, predictions, picks: championPicks, tournament, publicOnly: true }),
+    [publicPlayers, matches, predictions, championPicks, tournament],
+  );
+  const bonus = useMemo(
+    () => calculateChampionBonus({ players: publicPlayers, picks: championPicks, tournament, publicOnly: true }),
+    [publicPlayers, championPicks, tournament],
+  );
+  const rows = bonusRows;
   const visibleRows = rows.filter((row) => row.predictions_submitted_count > 0);
   const liveRows = calculateLiveLeaderboard(publicPlayers, matches, predictions);
   const stylesByPlayer = useMemo(
@@ -1745,6 +1779,11 @@ function LeaderboardPage({ players, matches, predictions, predictionAids, matchO
     <section>
       <PageTitle title="Leaderboard" action={<button onClick={refresh}>Refresh</button>} />
       <p className="muted">You will see your name here once you submit a prediction.</p>
+      <div className="leaderboard-bonus-note">
+        {bonus.finalized
+          ? `Champion bonus is final. ${bonus.champion?.name || 'Champion'} picks have been added to the total.`
+          : `Projected ranking includes potential Champion Bonus. Pool: ${bonus.pool} point${bonus.pool === 1 ? '' : 's'} split by champion pick.`}
+      </div>
       <div className="table-wrap">
         <table>
           <thead>
@@ -1752,6 +1791,8 @@ function LeaderboardPage({ players, matches, predictions, predictionAids, matchO
               <th>Rank</th>
               <th>Player</th>
               <th>Points</th>
+              <th>{bonus.finalized ? 'Champion Bonus' : 'Potential Bonus'}</th>
+              <th>{bonus.finalized ? 'Total' : 'Projected Total'}</th>
               <th>Live</th>
               <th>Exact</th>
               <th>Outcome</th>
@@ -1784,6 +1825,8 @@ function LeaderboardPage({ players, matches, predictions, predictionAids, matchO
                     </span>
                   </td>
                   <td><strong>{row.total_points}</strong></td>
+                  <td>{bonus.finalized ? row.champion_bonus : row.potential_champion_bonus}</td>
+                  <td><strong>{row.projected_total_points}</strong></td>
                   <td>{liveRows.get(row.player_id)?.live_points || 0}</td>
                   <td>{row.exact_score_count}</td>
                   <td>{row.correct_outcome_count}</td>
@@ -2477,6 +2520,158 @@ function BracketTeamLabel({ match, team, label }) {
   return <span title={label}>{label}</span>;
 }
 
+function ChampionBonusPage({
+  player,
+  players,
+  matches,
+  teams,
+  championPicks,
+  tournament,
+  refresh,
+  setMessage,
+  setError,
+  navigate,
+  routeBase,
+}) {
+  const [savingTeam, setSavingTeam] = useState('');
+  const cards = useMemo(() => buildChampionBonusTeams(matches, teams), [matches, teams]);
+  const publicBonus = useMemo(
+    () => calculateChampionBonus({ players, picks: championPicks, tournament, publicOnly: true }),
+    [players, championPicks, tournament],
+  );
+  const currentPick = getCurrentChampionPick(championPicks, player?.id);
+  const locked = isChampionBonusLocked(tournament);
+  const canPick = player && isPlayerActive(player) && !locked;
+  const picksByTeam = useMemo(() => {
+    const publicPlayerIds = new Set(players.filter(isPublicStatsPlayer).map((item) => item.id));
+    const publicPlayerById = new Map(players.filter(isPublicStatsPlayer).map((item) => [item.id, item]));
+    const grouped = new Map();
+    championPicks
+      .filter((pick) => publicPlayerIds.has(pick.player_id))
+      .forEach((pick) => {
+        const key = pick.team_slug || slugifyTeamName(pick.team_name);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push({ pick, player: publicPlayerById.get(pick.player_id) });
+      });
+    grouped.forEach((rows) => rows.sort((a, b) => getPlayerDisplayName(a.player).localeCompare(getPlayerDisplayName(b.player))));
+    return grouped;
+  }, [players, championPicks]);
+
+  const chooseChampion = async (card) => {
+    setMessage('');
+    setError('');
+    if (!player || !isPlayerActive(player)) {
+      setError('Choose your active player profile before selecting a champion.');
+      return;
+    }
+    if (locked) {
+      setError(`Champion picks are locked since ${formatDate(getChampionBonusLockAt(tournament))}.`);
+      return;
+    }
+    if (!card.concrete) {
+      setError('This Round of 32 slot is not confirmed yet. Pick it after the team is imported.');
+      return;
+    }
+    setSavingTeam(card.slug);
+    try {
+      const payload = {
+        tournament_id: tournament?.id || null,
+        player_id: player.id,
+        team_slug: card.slug,
+        team_name: card.name,
+        team_country_code: card.team?.country_code || null,
+        team_flag_url: card.team?.flag_url || null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from('champion_winner_picks')
+        .upsert(payload, { onConflict: 'player_id,tournament_id' });
+      throwIfError(error);
+      setMessage(`Champion bonus pick saved: ${card.name}.`);
+      await refresh();
+    } catch (err) {
+      setError(formatOptionalTableSetupError(err, 'Champion Bonus is not set up in Supabase yet. Apply the champion_winner_picks migration, then try again.'));
+    } finally {
+      setSavingTeam('');
+    }
+  };
+
+  return (
+    <section className="champion-bonus-page">
+      <PageTitle title="Champion Bonus" action={<button onClick={refresh}>Refresh</button>} />
+      <section className="panel champion-bonus-hero">
+        <div>
+          <p className="eyebrow">World Cup winner bonus</p>
+          <h2>Pick the champion from the Round of 32.</h2>
+          <p className="muted">
+            Bonus pool: {publicBonus.eligible_player_count} active public players x 1 = {publicBonus.pool} point{publicBonus.pool === 1 ? '' : 's'}.
+            The pool is split between everyone who picked the actual champion.
+          </p>
+        </div>
+        <div className="champion-bonus-status">
+          <span>{publicBonus.finalized ? 'Final champion' : locked ? 'Locked' : 'Open'}</span>
+          <strong>{publicBonus.champion?.name || (locked ? 'Read-only' : 'Choose now')}</strong>
+          <em>Lock: {formatDate(publicBonus.lock_at)}</em>
+        </div>
+      </section>
+
+      {!player && <NeedPlayer navigate={navigate} routeBase={routeBase} />}
+      {player && !isPlayerActive(player) && <InactivePlayer navigate={navigate} routeBase={routeBase} />}
+      {player && isPlayerActive(player) && (
+        <div className="champion-current-pick">
+          <strong>Your champion pick</strong>
+          <span>{currentPick ? currentPick.team_name : locked ? 'No pick submitted before lock.' : 'No champion selected yet.'}</span>
+        </div>
+      )}
+
+      <div className="champion-team-grid">
+        {cards.map((card) => {
+          const rows = picksByTeam.get(card.slug) || [];
+          const potential = getPotentialBonusForTeam(card, publicBonus);
+          const selected = currentPick && (currentPick.team_slug === card.slug || normalizeName(currentPick.team_name) === normalizeName(card.name));
+          return (
+            <article className={`champion-team-card ${selected ? 'selected' : ''} ${card.placeholder ? 'placeholder' : ''}`} key={card.key}>
+              <div className="champion-team-main">
+                <div className="champion-team-title">
+                  {card.concrete ? <TeamFlag team={card.team} /> : <span className="flag-placeholder" aria-hidden="true">TBD</span>}
+                  <div>
+                    <strong>{card.name}</strong>
+                    <span>{card.bracket_slot || 'Round of 32'}</span>
+                  </div>
+                </div>
+                <div className="champion-potential">
+                  <span>Potential bonus</span>
+                  <strong>{potential}</strong>
+                </div>
+              </div>
+              <div className="champion-picker-list">
+                <span>{rows.length} public pick{rows.length === 1 ? '' : 's'}</span>
+                {rows.length > 0 ? (
+                  <div className="submitted-list">
+                    {rows.map(({ pick, player: rowPlayer }) => (
+                      <span key={pick.id || `${pick.player_id}-${pick.team_slug}`}>{getPlayerDisplayName(rowPlayer)}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No one picked this champion yet.</p>
+                )}
+              </div>
+              <button
+                className={selected ? 'primary' : ''}
+                onClick={() => chooseChampion(card)}
+                disabled={!canPick || !card.concrete || savingTeam === card.slug}
+              >
+                {savingTeam === card.slug ? 'Saving...' : selected ? 'Selected' : card.concrete ? 'Pick champion' : 'Waiting for team'}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+      {!cards.length && <EmptyState text="Round of 32 teams will appear here after bracket fixtures are imported." />}
+    </section>
+  );
+}
+
 function FavoritesPage({ player, teams, teamFavorites, toggleTeamFavorite, navigate, routeBase }) {
   if (!player) {
     return <NeedPlayer navigate={navigate} routeBase={routeBase} />;
@@ -2986,6 +3181,8 @@ function AdminTools({
   players,
   predictions,
   matches,
+  championPicks,
+  teams,
   refresh,
   setMessage,
   setError,
@@ -3230,6 +3427,16 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
       />
+      <ChampionBonusAdminPanel
+        tournament={tournament}
+        players={players}
+        matches={matches}
+        teams={teams}
+        championPicks={championPicks}
+        refresh={refresh}
+        setMessage={setMessage}
+        setError={setError}
+      />
       <AdminPlayersPanel
         tournament={tournament}
         players={players}
@@ -3392,6 +3599,123 @@ function FamilyStatsPanel({ tournament, players, matches, predictions, favorites
             </div>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function ChampionBonusAdminPanel({
+  tournament,
+  players,
+  matches,
+  teams,
+  championPicks,
+  refresh,
+  setMessage,
+  setError,
+}) {
+  const [lockAt, setLockAt] = useState(() => toLocalInputValue(getChampionBonusLockAt(tournament)));
+  const [championSlug, setChampionSlug] = useState(tournament?.champion_bonus_winner_team_slug || '');
+  const [busy, setBusy] = useState('');
+  const cards = useMemo(() => buildChampionBonusTeams(matches, teams).filter((card) => card.concrete), [matches, teams]);
+  const bonus = useMemo(
+    () => calculateChampionBonus({ players, picks: championPicks, tournament, publicOnly: true }),
+    [players, championPicks, tournament],
+  );
+
+  useEffect(() => {
+    setLockAt(toLocalInputValue(getChampionBonusLockAt(tournament)));
+    setChampionSlug(tournament?.champion_bonus_winner_team_slug || '');
+  }, [tournament?.id, tournament?.champion_bonus_lock_at, tournament?.champion_bonus_winner_team_slug]);
+
+  const runRequest = async (body) => {
+    const response = await fetch('/api/champion-bonus', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': sessionStorage.getItem('admin-password') || ADMIN_PASSWORD,
+      },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Champion bonus admin action failed.');
+    return payload;
+  };
+
+  const saveSettings = async () => {
+    setMessage('');
+    setError('');
+    setBusy('settings');
+    try {
+      await runRequest({
+        action: 'settings',
+        tournament_id: tournament?.id,
+        champion_bonus_lock_at: lockAt ? new Date(lockAt).toISOString() : '',
+      });
+      setMessage('Champion Bonus lock time saved.');
+      await refresh();
+    } catch (err) {
+      setError(formatOptionalTableSetupError(err, 'Champion Bonus settings columns are not set up in Supabase yet. Apply the migration, then try again.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const finalizeChampion = async () => {
+    const card = cards.find((item) => item.slug === championSlug);
+    setMessage('');
+    setError('');
+    setBusy('finalize');
+    try {
+      await runRequest({
+        action: 'finalize',
+        tournament_id: tournament?.id,
+        clear: !card,
+        team_slug: card?.slug || '',
+        team_name: card?.name || '',
+      });
+      setMessage(card ? `Champion Bonus finalized for ${card.name}.` : 'Champion Bonus final result cleared.');
+      await refresh();
+    } catch (err) {
+      setError(formatOptionalTableSetupError(err, 'Champion Bonus settings columns are not set up in Supabase yet. Apply the migration, then try again.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <section className="panel champion-admin-panel">
+      <div className="section-heading">
+        <div>
+          <h2>Champion Bonus</h2>
+          <p className="muted">Winner-pick bonus health, lock time, and final champion.</p>
+        </div>
+      </div>
+      <div className="clone-kpis family-kpis">
+        <span><strong>{bonus.eligible_player_count}</strong> eligible public players</span>
+        <span><strong>{bonus.pool}</strong> bonus pool</span>
+        <span><strong>{bonus.pick_count}</strong> champion picks</span>
+        <span><strong>{bonus.locked ? 'Locked' : 'Open'}</strong> status</span>
+        <span><strong>{cards.length}</strong> concrete teams</span>
+        <span><strong>{bonus.champion?.name || 'Not set'}</strong> champion</span>
+      </div>
+      <div className="champion-admin-grid">
+        <AdminInput label="Lock time" type="datetime-local" value={lockAt} onChange={setLockAt} />
+        <label>
+          Final champion
+          <select value={championSlug} onChange={(event) => setChampionSlug(event.target.value)}>
+            <option value="">Not finalized</option>
+            {cards.map((card) => (
+              <option key={card.slug} value={card.slug}>{card.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="button-row">
+        <button onClick={saveSettings} disabled={Boolean(busy)}>{busy === 'settings' ? 'Saving...' : 'Save lock time'}</button>
+        <button className="primary" onClick={finalizeChampion} disabled={Boolean(busy)}>
+          {busy === 'finalize' ? 'Saving...' : championSlug ? 'Finalize champion' : 'Clear final champion'}
+        </button>
       </div>
     </section>
   );
@@ -4043,12 +4367,14 @@ function HelpPage({ navigate, routeBase }) {
           <p>Check your own predictions and see everyone else after picks are revealed.</p>
           <button onClick={() => goTo('/stats')}>My Stats</button>
           <p>See your points, rank, accuracy, nearby leaderboard, open pick gaps, and protected Top 10 code when available.</p>
+          <button onClick={() => goTo('/champion-bonus')}>Champion Bonus</button>
+          <p>Pick the World Cup winner from the Round of 32. The bonus pool is active public players x 1 and is split between everyone who picked the champion.</p>
           <button onClick={() => goTo('/groups')}>Groups</button>
           <p>See group tables and schedules. Tap a country flag or name to open its nation page.</p>
           <button onClick={() => goTo('/favorites')}>Favorites</button>
           <p>Keep your favorite teams in one place. Add or remove them with the star beside a team.</p>
           <button onClick={() => goTo('/leaderboard')}>Leaderboard</button>
-          <p>Track points after matches finish. Rank #1 is marked as Leader, ranks #2-#10 are highlighted as Top 10, and your name appears once you submit a prediction.</p>
+          <p>Track match points, live projected Champion Bonus, and projected total. Rank #1 is marked as Leader, ranks #2-#10 are highlighted as Top 10, and your name appears once you submit a prediction.</p>
         </div>
       </section>
 
@@ -4189,7 +4515,7 @@ function normalizeRoute(value) {
 
 function normalizePageRoute(path) {
   if (path.startsWith('/nations/')) return path;
-  return ['/', '/matches', '/predictions', '/stats', '/groups', '/bracket', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
+  return ['/', '/matches', '/predictions', '/stats', '/champion-bonus', '/groups', '/bracket', '/favorites', '/leaderboard', '/top10-code', '/admin', '/help'].includes(path) ? path : '/';
 }
 
 function getRouteGroupSlug(route) {
@@ -4368,6 +4694,14 @@ function formatManualSyncError(message) {
     return 'The football data provider is temporarily unavailable. Please try the sync again shortly.';
   }
   return value || 'Manual sync failed.';
+}
+
+function formatOptionalTableSetupError(error, fallback) {
+  const message = error?.message || String(error || '');
+  if (/could not find the table|schema cache|does not exist|column .* does not exist|relation .* does not exist|ON CONFLICT/i.test(message)) {
+    return fallback;
+  }
+  return message || fallback;
 }
 
 async function runTop10Request(body, admin = false) {
