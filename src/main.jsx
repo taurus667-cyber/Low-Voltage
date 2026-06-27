@@ -35,6 +35,7 @@ import { PREDICTION_STYLES, buildPredictionStyle, buildPredictionStylesByPlayer 
 import { isPlayerActive, isPublicStatsPlayer } from './lib/playerVisibility.js';
 import { selectAllRows } from './lib/supabasePaging.js';
 import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
+import { Analytics } from '@vercel/analytics/react';
 import './styles.css';
 
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || '';
@@ -371,6 +372,7 @@ function App() {
           onClose={() => setTop10Celebration(null)}
         />
       )}
+      <Analytics />
     </div>
   );
 }
