@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Analytics } from '@vercel/analytics/react';
 import { supabase, isSupabaseConfigured } from './lib/supabase.js';
 import { calculateLeaderboard, getLeaderboardRankStatus, getPlayerTop10Status, isFinalScoreComplete, predictionPoints } from './lib/scoring.js';
 import { calculateLiveLeaderboard, livePredictionPoints } from './lib/livePoints.js';
@@ -4564,4 +4565,9 @@ function isUniqueViolation(error) {
   return error?.code === '23505' || /duplicate key|unique/i.test(error?.message || '');
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(
+  <>
+    <App />
+    <Analytics />
+  </>,
+);
