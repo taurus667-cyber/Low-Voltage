@@ -30,10 +30,15 @@ export async function runAdminSync(sync, runners = {}) {
   const refreshClones = runners.refreshLinkedClones || refreshLinkedClones;
   const result = {};
 
-  if (sync === 'bracket' || sync === 'all') result.bracket = await runBracket();
-  if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematch();
-  if (sync === 'live' || sync === 'all') result.live = await runLive();
-  result.clones = result.live?.clones || result.prematch?.clones || result.bracket?.clones || await refreshClones();
+  const deferCloneRefresh = sync === 'all';
+  const runnerOptions = deferCloneRefresh ? { refreshClones: false } : {};
+
+  if (sync === 'bracket' || sync === 'all') result.bracket = await runBracket(runnerOptions);
+  if (sync === 'prematch' || sync === 'all') result.prematch = await runPrematch(runnerOptions);
+  if (sync === 'live' || sync === 'all') result.live = await runLive(runnerOptions);
+  result.clones = deferCloneRefresh
+    ? await refreshClones()
+    : result.live?.clones || result.prematch?.clones || result.bracket?.clones || await refreshClones();
 
   return result;
 }

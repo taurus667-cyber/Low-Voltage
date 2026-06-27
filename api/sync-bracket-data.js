@@ -45,7 +45,7 @@ export default async function handler(request, response) {
   }
 }
 
-export async function runBracketSync() {
+export async function runBracketSync(options = {}) {
   const required = getRequiredServerEnv();
   if (required.error) throw new Error(required.error);
 
@@ -65,12 +65,9 @@ export async function runBracketSync() {
 
   const writeCounts = await writeBracketRows(supabase, rows, existingRows);
 
-  let clones = { refreshed: 0 };
-  try {
-    clones = await refreshLinkedClonesForSource(supabase, tournament);
-  } catch (error) {
-    clones = { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
-  }
+  const clones = options.refreshClones === false
+    ? { refreshed: 0, skipped: 'Clone refresh deferred.' }
+    : await refreshClonesSafely(supabase, tournament);
 
   return {
     tournament: tournament.slug,
@@ -86,6 +83,14 @@ export async function runBracketSync() {
     unmatchedProviderFixtures,
     clones,
   };
+}
+
+async function refreshClonesSafely(supabase, tournament) {
+  try {
+    return await refreshLinkedClonesForSource(supabase, tournament);
+  } catch (error) {
+    return { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
+  }
 }
 
 export async function fetchProviderKnockoutFixtures(apiKey, tournament) {

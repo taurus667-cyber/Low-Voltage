@@ -20,12 +20,38 @@ test('all sync imports bracket fixtures before fetching insights', async () => {
     },
     refreshLinkedClones: async () => {
       calls.push('clones');
-      return { refreshed: 0 };
+      return { refreshed: 3 };
     },
   });
 
-  assert.deepEqual(calls, ['bracket', 'prematch', 'live']);
-  assert.deepEqual(result.clones, { refreshed: 1 });
+  assert.deepEqual(calls, ['bracket', 'prematch', 'live', 'clones']);
+  assert.deepEqual(result.clones, { refreshed: 3 });
+});
+
+test('all sync defers clone refresh inside sub-jobs', async () => {
+  const options = [];
+
+  await runAdminSync('all', {
+    runBracketSync: async (opts) => {
+      options.push(opts);
+      return {};
+    },
+    runPrematchSync: async (opts) => {
+      options.push(opts);
+      return {};
+    },
+    runLiveScoreSync: async (opts) => {
+      options.push(opts);
+      return {};
+    },
+    refreshLinkedClones: async () => ({ refreshed: 1 }),
+  });
+
+  assert.deepEqual(options, [
+    { refreshClones: false },
+    { refreshClones: false },
+    { refreshClones: false },
+  ]);
 });
 
 test('single sync actions only run their requested job', async () => {

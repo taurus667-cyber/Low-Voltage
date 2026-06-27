@@ -3392,7 +3392,7 @@ function AdminTools({
         },
         body: JSON.stringify({ sync }),
       });
-      const payload = await response.json();
+      const payload = await readJsonResponse(response);
       if (!response.ok) throw new Error(payload.error || 'Manual sync failed.');
 
       const parts = [];
@@ -4802,7 +4802,25 @@ function formatManualSyncError(message) {
   if (/API-Football .* failed with 5\d\d/i.test(value)) {
     return 'The football data provider is temporarily unavailable. Please try the sync again shortly.';
   }
+  if (/not valid json|unexpected token|an error occurred|function invocation|timeout|timed out/i.test(value)) {
+    return 'The sync request did not return a normal app response, likely because the serverless function timed out or Vercel returned an error page. Try Sync bracket, Sync insights, and Sync live/recaps separately. If it repeats, check the Vercel function logs.';
+  }
   return value || 'Manual sync failed.';
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const message = text
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300);
+    return { error: message || `Request returned ${response.status} ${response.statusText || ''}`.trim() };
+  }
 }
 
 function formatOptionalTableSetupError(error, fallback) {

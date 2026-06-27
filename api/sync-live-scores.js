@@ -27,7 +27,7 @@ export default async function handler(request, response) {
   }
 }
 
-export async function runLiveScoreSync() {
+export async function runLiveScoreSync(options = {}) {
   const required = getRequiredServerEnv();
   if (required.error) throw new Error(required.error);
 
@@ -72,12 +72,9 @@ export async function runLiveScoreSync() {
   } catch (error) {
     top10 = { created: 0, warning: error.message || 'Top 10 protection sync skipped.' };
   }
-  let clones = { refreshed: 0 };
-  try {
-    clones = await refreshLinkedClonesForSource(supabase, tournament);
-  } catch (error) {
-    clones = { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
-  }
+  const clones = options.refreshClones === false
+    ? { refreshed: 0, skipped: 'Clone refresh deferred.' }
+    : await refreshClonesSafely(supabase, tournament);
 
   return {
     tournament: tournament.slug,
@@ -90,6 +87,14 @@ export async function runLiveScoreSync() {
     top10,
     clones,
   };
+}
+
+async function refreshClonesSafely(supabase, tournament) {
+  try {
+    return await refreshLinkedClonesForSource(supabase, tournament);
+  } catch (error) {
+    return { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
+  }
 }
 
 async function fetchActiveMatches(supabase, tournament, now) {

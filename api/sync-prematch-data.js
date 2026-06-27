@@ -21,7 +21,7 @@ export default async function handler(request, response) {
   }
 }
 
-export async function runPrematchSync() {
+export async function runPrematchSync(options = {}) {
   const required = getRequiredServerEnv();
   if (required.error) throw new Error(required.error);
 
@@ -67,12 +67,9 @@ export async function runPrematchSync() {
   }
   await upsertRows(supabase, 'match_prediction_aids', aids, 'match_id,provider,aid_type');
   await upsertRows(supabase, 'match_odds', oddsRows, 'match_id,provider,bookmaker,market');
-  let clones = { refreshed: 0 };
-  try {
-    clones = await refreshLinkedClonesForSource(supabase, tournament);
-  } catch (error) {
-    clones = { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
-  }
+  const clones = options.refreshClones === false
+    ? { refreshed: 0, skipped: 'Clone refresh deferred.' }
+    : await refreshClonesSafely(supabase, tournament);
 
   return {
     tournament: tournament.slug,
@@ -83,6 +80,14 @@ export async function runPrematchSync() {
     clones,
     warnings,
   };
+}
+
+async function refreshClonesSafely(supabase, tournament) {
+  try {
+    return await refreshLinkedClonesForSource(supabase, tournament);
+  } catch (error) {
+    return { refreshed: 0, warning: error.message || 'Clone refresh skipped.' };
+  }
 }
 
 async function ensureTournamentTeams(supabase, tournament, apiKey, warnings) {
