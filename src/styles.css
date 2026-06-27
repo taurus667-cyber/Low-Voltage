@@ -2051,6 +2051,39 @@ th {
   justify-content: space-between;
 }
 
+.champion-bonus-guide {
+  background: #fbfdfa;
+}
+
+.champion-bonus-guide h2 {
+  margin-bottom: 0.35rem;
+}
+
+.champion-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.champion-guide-grid article {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid #d6e4df;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.85rem;
+}
+
+.champion-guide-grid strong {
+  color: #0f766e;
+}
+
+.champion-guide-grid p {
+  margin: 0;
+  color: #405852;
+  line-height: 1.45;
+}
+
 .champion-team-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -2984,6 +3017,7 @@ th {
   .score-row,
   .two-col,
   .champion-team-main,
+  .champion-guide-grid,
   .stats-distance-grid,
   .prediction-style-metrics,
   .help-actions,

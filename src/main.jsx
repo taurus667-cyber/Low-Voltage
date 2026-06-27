@@ -2542,6 +2542,7 @@ function ChampionBonusPage({
   const currentPick = getCurrentChampionPick(championPicks, player?.id);
   const locked = isChampionBonusLocked(tournament);
   const canPick = player && isPlayerActive(player) && !locked;
+  const availableTeamCount = cards.filter((card) => card.concrete).length;
   const picksByTeam = useMemo(() => {
     const publicPlayerIds = new Set(players.filter(isPublicStatsPlayer).map((item) => item.id));
     const publicPlayerById = new Map(players.filter(isPublicStatsPlayer).map((item) => [item.id, item]));
@@ -2612,7 +2613,34 @@ function ChampionBonusPage({
           <span>{publicBonus.finalized ? 'Final champion' : locked ? 'Locked' : 'Open'}</span>
           <strong>{publicBonus.champion?.name || (locked ? 'Read-only' : 'Choose now')}</strong>
           <em>Lock: {formatDate(publicBonus.lock_at)}</em>
+          <button onClick={() => downloadChampionBonusCalendar(tournament)} disabled={locked}>
+            Add cutoff to calendar
+          </button>
         </div>
+      </section>
+
+      <section className="panel champion-bonus-guide" aria-label="Champion Bonus rules">
+        <div>
+          <h2>How this works</h2>
+          <p>You get <strong>one champion pick</strong>. Pick the team you think will win the World Cup.</p>
+        </div>
+        <div className="champion-guide-grid">
+          <article>
+            <strong>Can I change it?</strong>
+            <p>Yes, until the cutoff. If you pick another team, it replaces your old champion pick.</p>
+          </article>
+          <article>
+            <strong>What if I do not see all 32 teams?</strong>
+            <p>Only confirmed Round of 32 teams can be picked. You can pick from the available teams now, or wait for more teams to appear before the cutoff.</p>
+          </article>
+          <article>
+            <strong>When does it close?</strong>
+            <p>The cutoff is {formatDate(publicBonus.lock_at)}. After that, champion picks are locked.</p>
+          </article>
+        </div>
+        <p className="muted">
+          Available now: {availableTeamCount} of 32 teams. Waiting teams appear as disabled TBD cards until the bracket data confirms them.
+        </p>
       </section>
 
       {!player && <NeedPlayer navigate={navigate} routeBase={routeBase} />}
@@ -4368,7 +4396,7 @@ function HelpPage({ navigate, routeBase }) {
           <button onClick={() => goTo('/stats')}>My Stats</button>
           <p>See your points, rank, accuracy, nearby leaderboard, open pick gaps, and protected Top 10 code when available.</p>
           <button onClick={() => goTo('/champion-bonus')}>Champion Bonus</button>
-          <p>Pick the World Cup winner from the Round of 32. The bonus pool is active public players x 1 and is split between everyone who picked the champion.</p>
+          <p>Pick one World Cup winner from the Round of 32. You can change your champion before the cutoff; the new pick replaces the old one. The bonus pool is active public players x 1 and is split between everyone who picked the champion.</p>
           <button onClick={() => goTo('/groups')}>Groups</button>
           <p>See group tables and schedules. Tap a country flag or name to open its nation page.</p>
           <button onClick={() => goTo('/favorites')}>Favorites</button>
@@ -4399,6 +4427,21 @@ function HelpPage({ navigate, routeBase }) {
             question: 'How are points calculated?',
             answer:
               'An exact score gives 3 points. A correct match outcome gives 1 point. For example, predicting the winner correctly but not the exact score earns 1 point.',
+          },
+          {
+            question: 'How does Champion Bonus work?',
+            answer:
+              'You choose one team to win the World Cup. You can change that team until the cutoff time shown on the Champion Bonus page. If you choose another team, it replaces your old champion pick. After the cutoff, champion picks are locked.',
+          },
+          {
+            question: 'Why are some Champion Bonus teams not selectable?',
+            answer:
+              'The app only lets you pick confirmed Round of 32 teams. If all 32 teams are not available yet, you can either pick from the teams already shown or wait for more teams to appear before the cutoff. Disabled TBD cards mean the matchup is not confirmed in the app yet.',
+          },
+          {
+            question: 'What is the Champion Bonus cutoff?',
+            answer:
+              'The cutoff is shown on the Champion Bonus page. Use Add cutoff to calendar if you want a reminder. Once the cutoff passes, nobody can add or change a champion pick.',
           },
           {
             question: 'Why is my name missing from the leaderboard?',
@@ -4575,6 +4618,40 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value));
+}
+
+function downloadChampionBonusCalendar(tournament) {
+  const lockAt = getChampionBonusLockAt(tournament);
+  const start = new Date(lockAt);
+  if (Number.isNaN(start.getTime())) return;
+  const end = new Date(start.getTime() + 15 * 60 * 1000);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//FIFA 2026 Picks//Champion Bonus//EN',
+    'BEGIN:VEVENT',
+    `UID:champion-bonus-${tournament?.id || 'world-cup-2026'}@fifa-2026-picks`,
+    `DTSTAMP:${formatIcsDate(new Date())}`,
+    `DTSTART:${formatIcsDate(start)}`,
+    `DTEND:${formatIcsDate(end)}`,
+    'SUMMARY:Champion Bonus pick cutoff',
+    'DESCRIPTION:Last chance to choose or change your World Cup champion pick.',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ];
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'champion-bonus-cutoff.ics';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function formatIcsDate(date) {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
 }
 
 function getKsaDayKey(value) {
