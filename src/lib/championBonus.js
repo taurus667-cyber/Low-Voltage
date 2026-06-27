@@ -32,7 +32,7 @@ export function buildChampionBonusTeams(matches = [], teams = []) {
     ['team_a', 'team_b'].forEach((field) => {
       const label = match[field];
       const slotSide = field === 'team_a' ? 'A' : 'B';
-      const concrete = !match.is_placeholder && !isPlaceholderTeam(label);
+      const concrete = !isPlaceholderTeam(label);
       const team = concrete ? teamIdentity(label, teams) : null;
       const slug = concrete ? team.slug : `${match.bracket_slot || match.id}-${slotSide}`.toLowerCase();
       if (seen.has(slug)) return;

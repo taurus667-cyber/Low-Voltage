@@ -1,4 +1,6 @@
 import { isFinalScoreComplete } from './scoring.js';
+import { calculateGroupStandings } from './standings.js';
+import { teamIdentity } from './teamMetadata.js';
 
 export const BRACKET_ROUNDS = [
   { key: 'round-of-32', label: 'Round of 32', order: 1, stagePatterns: [/round of 32/i, /last 32/i] },
@@ -88,6 +90,7 @@ export function getBracketSlot(match) {
 
 export function buildBracket(matches = [], options = {}) {
   const includePlaceholders = options.includePlaceholders !== false;
+  const groupStandings = options.groupStandings || calculateGroupStandings(matches);
   const knockoutMatches = matches
     .filter((match) => match.is_published)
     .filter(isKnockoutMatch)
@@ -98,10 +101,11 @@ export function buildBracket(matches = [], options = {}) {
     }));
 
   const realBySlot = new Map(knockoutMatches.map((match) => [match.bracket_slot, match]));
+  const concreteTeamNames = getConcreteKnockoutTeamNames(knockoutMatches);
   const mergedMatches = includePlaceholders
     ? OFFICIAL_KNOCKOUT_PLACEHOLDERS.map((item) => {
       const real = realBySlot.get(item.bracket_slot);
-      return real ? { ...item, ...real, is_placeholder: false } : item;
+      return real ? { ...item, ...real, is_placeholder: false } : resolveGroupSeeds(item, groupStandings, concreteTeamNames);
     })
       .concat(knockoutMatches.filter((match) => !OFFICIAL_KNOCKOUT_PLACEHOLDERS.some((item) => item.bracket_slot === match.bracket_slot)))
     : knockoutMatches;
@@ -226,4 +230,49 @@ function placeholder(slot, round, dateLabel, teamA, teamB, winnerToSlot = '', wi
     source_b_slot: sourceB || null,
     is_placeholder: true,
   };
+}
+
+function resolveGroupSeeds(match, groupStandings = [], concreteTeamNames = new Set()) {
+  const teamA = resolveDirectGroupSeed(match.team_a, groupStandings, concreteTeamNames);
+  const teamB = resolveDirectGroupSeed(match.team_b, groupStandings, concreteTeamNames);
+  if (teamA === match.team_a && teamB === match.team_b) return match;
+  return {
+    ...match,
+    team_a: teamA,
+    team_b: teamB,
+    group_seed_resolved: true,
+  };
+}
+
+function resolveDirectGroupSeed(label, groupStandings = [], concreteTeamNames = new Set()) {
+  const raw = String(label || '').trim();
+  const match = raw.match(/^(Winner|Runner-up)\s+Group\s+([A-L])$/i);
+  if (!match) return label;
+
+  const [, seedType, groupLetter] = match;
+  const group = groupStandings.find((item) =>
+    String(item.groupName || '').trim().toLowerCase() === `group ${groupLetter.toLowerCase()}`,
+  );
+  if (!isCompleteGroup(group)) return label;
+
+  const position = /^winner$/i.test(seedType) ? 1 : 2;
+  const resolvedTeam = group.rows.find((row) => row.position === position)?.team;
+  if (!resolvedTeam) return label;
+  if (concreteTeamNames.has(teamIdentity(resolvedTeam).slug)) return label;
+  return resolvedTeam;
+}
+
+function isCompleteGroup(group) {
+  if (!group?.rows?.length) return false;
+  return group.rows.length >= 4 && group.rows.every((row) => Number(row.played) >= 3);
+}
+
+function getConcreteKnockoutTeamNames(matches = []) {
+  const names = new Set();
+  matches.forEach((match) => {
+    [match.team_a, match.team_b].forEach((team) => {
+      if (!isPlaceholderTeam(team)) names.add(teamIdentity(team).slug);
+    });
+  });
+  return names;
 }

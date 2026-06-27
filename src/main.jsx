@@ -35,7 +35,7 @@ import { buildPlayerStats } from './lib/playerStats.js';
 import { PREDICTION_STYLES, buildPredictionStyle, buildPredictionStylesByPlayer } from './lib/predictionStyle.js';
 import { isPlayerActive, isPublicStatsPlayer } from './lib/playerVisibility.js';
 import { selectAllRows } from './lib/supabasePaging.js';
-import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel } from './lib/bracket.js';
+import { buildBracket, getBracketHealth, getMatchWinner, getTeamSeedLabel, isKnockoutMatch } from './lib/bracket.js';
 import {
   buildChampionBonusLeaderboard,
   buildChampionBonusTeams,
@@ -2474,11 +2474,11 @@ function BracketPage({ matches, teams, refresh, navigate, routeBase }) {
 
 function BracketMatchNode({ match, teams, slots, navigate, routeBase, compact = false }) {
   const winner = getMatchWinner(match);
-  const teamA = teamIdentity(match.team_a, teams);
-  const teamB = teamIdentity(match.team_b, teams);
   const scoreReady = isFinalScoreComplete(match);
   const labelA = getTeamSeedLabel(match, 'A', slots);
   const labelB = getTeamSeedLabel(match, 'B', slots);
+  const teamA = teamIdentity(labelA, teams);
+  const teamB = teamIdentity(labelB, teams);
   const slotLabel = match.bracket_slot || match.external_match_id || 'Slot';
   const goToMatch = () => navigate(`${buildRoute(routeBase, '/matches')}#match-${match.id}`);
   const Wrapper = match.is_placeholder ? 'div' : 'button';
@@ -2492,11 +2492,11 @@ function BracketMatchNode({ match, teams, slots, navigate, routeBase, compact = 
           <span>{match.date_label || formatDate(match.kickoff_time)}</span>
         </span>
         <span className={`bracket-team ${winner?.side === 'A' ? 'winner' : ''}`}>
-          <BracketTeamLabel match={match} team={teamA} label={labelA} />
+          <BracketTeamLabel team={teamA} label={labelA} />
           {scoreReady && <strong>{match.team_a_score}</strong>}
         </span>
         <span className={`bracket-team ${winner?.side === 'B' ? 'winner' : ''}`}>
-          <BracketTeamLabel match={match} team={teamB} label={labelB} />
+          <BracketTeamLabel team={teamB} label={labelB} />
           {scoreReady && <strong>{match.team_b_score}</strong>}
         </span>
         <span className="bracket-node-foot">
@@ -2508,8 +2508,8 @@ function BracketMatchNode({ match, teams, slots, navigate, routeBase, compact = 
   );
 }
 
-function BracketTeamLabel({ match, team, label }) {
-  const realTeam = !match.is_placeholder && !isBracketSourceLabel(label);
+function BracketTeamLabel({ team, label }) {
+  const realTeam = !isBracketSourceLabel(label);
   if (realTeam) {
     return (
       <span className="bracket-team-flag-only" title={label} aria-label={label}>
@@ -3431,6 +3431,8 @@ function AdminTools({
   return (
     <section>
       <PageTitle title="Admin" action={<button onClick={refresh}>Refresh</button>} />
+      <div className="admin-collapse-list">
+      <AdminCollapse title="Family stats" meta={`${players.length} players`} defaultOpen>
       <FamilyStatsPanel
         tournament={tournament}
         players={players}
@@ -3438,6 +3440,8 @@ function AdminTools({
         predictions={predictions}
         favorites={scopedRows(allTeamFavorites, tournament)}
       />
+      </AdminCollapse>
+      <AdminCollapse title="Group clones" meta={`${tournaments.filter((item) => item.is_clone).length} clones`}>
       <CloneGroupsPanel
         tournaments={tournaments}
         sourceTournaments={sourceTournaments}
@@ -3450,11 +3454,15 @@ function AdminTools({
         setError={setError}
         navigate={navigate}
       />
+      </AdminCollapse>
+      <AdminCollapse title="Top 10 protection" meta="Codes and profile protection">
       <Top10CodesPanel
         tournament={tournament}
         setMessage={setMessage}
         setError={setError}
       />
+      </AdminCollapse>
+      <AdminCollapse title="Champion Bonus" meta={`${championPicks.length} picks`}>
       <ChampionBonusAdminPanel
         tournament={tournament}
         players={players}
@@ -3465,6 +3473,8 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
       />
+      </AdminCollapse>
+      <AdminCollapse title="Players" meta={`${players.length} accounts`}>
       <AdminPlayersPanel
         tournament={tournament}
         players={players}
@@ -3474,7 +3484,11 @@ function AdminTools({
         setMessage={setMessage}
         setError={setError}
       />
+      </AdminCollapse>
+      <AdminCollapse title="Knockout bracket health" meta={`${matches.filter(isKnockoutMatch).length} knockout`} defaultOpen>
       <BracketHealthPanel matches={matches} />
+      </AdminCollapse>
+      <AdminCollapse title={editingId ? 'Edit match' : 'Add and import matches'} meta={`${matches.length} matches`}>
       <div className="admin-grid">
         <div className="panel">
           <h2>{editingId ? 'Edit match' : 'Add match'}</h2>
@@ -3554,7 +3568,9 @@ function AdminTools({
           <button onClick={() => importFixtures('csv')}>Import pasted CSV</button>
         </div>
       </div>
+      </AdminCollapse>
 
+      <AdminCollapse title="Match list" meta={`${matches.length} rows`}>
       <div className="admin-list">
         {matches.map((match) => (
           <article className="admin-match" key={match.id}>
@@ -3585,7 +3601,23 @@ function AdminTools({
           </article>
         ))}
       </div>
+      </AdminCollapse>
+      </div>
     </section>
+  );
+}
+
+function AdminCollapse({ title, meta, children, defaultOpen = false }) {
+  return (
+    <details className="admin-collapse panel" open={defaultOpen}>
+      <summary>
+        <span>{title}</span>
+        {meta && <em>{meta}</em>}
+      </summary>
+      <div className="admin-collapse-body">
+        {children}
+      </div>
+    </details>
   );
 }
 

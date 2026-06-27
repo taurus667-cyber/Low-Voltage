@@ -168,6 +168,51 @@ test('round-level chronological fallback matches provider fixtures that overflow
   assert.equal(rows.some((row) => row.team_a === 'France' && row.team_b === 'Sweden'), true);
 });
 
+test('resolved group seeds override stale provider slot assignments', () => {
+  const existingRows = existingRowsMap([
+    {
+      id: 'stale-m76',
+      bracket_slot: 'M76',
+      external_match_id: 'M76',
+      team_a: 'Germany',
+      team_b: 'Paraguay',
+      live_source: 'API-Football',
+      live_source_match_id: '1565176',
+      team_a_source_id: '1',
+      team_b_source_id: '2',
+      is_published: true,
+    },
+    ...completeGroup('Group E', ['Germany', 'Ivory Coast', 'Ecuador', 'Curacao']),
+  ]);
+
+  const { rows } = buildBracketRows({
+    existingRows,
+    providerFixtures: [
+      providerFixture({
+        id: 1565176,
+        date: '2026-06-29T20:30:00+00:00',
+        round: 'Round of 32',
+        home: 'Germany',
+        away: 'Paraguay',
+      }),
+    ],
+    tournament: { id: 'tournament-1' },
+    now: '2026-06-27T12:00:00.000Z',
+  });
+
+  const m76 = rows.find((row) => row.bracket_slot === 'M76');
+  const m79 = rows.find((row) => row.bracket_slot === 'M79');
+
+  assert.equal(m76.team_a, 'Winner Group F');
+  assert.equal(m76.team_b, 'Runner-up Group C');
+  assert.equal(m76.live_source_match_id, null);
+  assert.equal(m76.is_published, false);
+  assert.equal(m79.team_a, 'Germany');
+  assert.equal(m79.team_b, 'Paraguay');
+  assert.equal(m79.live_source_match_id, '1565176');
+  assert.equal(m79.is_published, true);
+});
+
 function providerFixture({
   id,
   date,
@@ -189,5 +234,43 @@ function providerFixture({
       home: { id: homeId, name: home },
       away: { id: awayId, name: away },
     },
+  };
+}
+
+function existingRowsMap(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    if (row.bracket_slot) map.set(row.bracket_slot, row);
+    if (row.external_match_id) map.set(row.external_match_id, row);
+    if (!row.bracket_slot && row.id) map.set(row.id, row);
+  });
+  return map;
+}
+
+function completeGroup(groupName, teams) {
+  return [
+    groupMatch(groupName, teams[0], teams[1], 3, 0),
+    groupMatch(groupName, teams[0], teams[2], 2, 0),
+    groupMatch(groupName, teams[0], teams[3], 4, 1),
+    groupMatch(groupName, teams[1], teams[2], 1, 0),
+    groupMatch(groupName, teams[1], teams[3], 2, 0),
+    groupMatch(groupName, teams[2], teams[3], 1, 0),
+  ];
+}
+
+let groupMatchId = 0;
+function groupMatch(groupName, teamA, teamB, scoreA, scoreB) {
+  groupMatchId += 1;
+  return {
+    id: `group-${groupMatchId}`,
+    external_match_id: `group-${groupMatchId}`,
+    team_a: teamA,
+    team_b: teamB,
+    team_a_score: scoreA,
+    team_b_score: scoreB,
+    stage: 'Group Stage',
+    group_name: groupName,
+    kickoff_time: '2026-06-20T12:00:00Z',
+    is_published: true,
   };
 }

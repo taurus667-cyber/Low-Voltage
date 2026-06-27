@@ -39,9 +39,11 @@ git log --oneline -n 5
 - `npm test`: unit tests under `src/**/*.test.js` and `api/**/*.test.js`.
 - `npm run smoke`: Playwright smoke test, defaults to local dev URL unless `SMOKE_BASE_URL` is set.
 - `npm run smoke:prod`: same smoke script, usually run with `SMOKE_BASE_URL=https://...`.
+- Built-in Codex browser: use `CODEX-BROWSER-RUNBOOK.md` for the known-good in-app browser setup and navigation sequence.
 
 ## Important Files
 
+- `CODEX-BROWSER-RUNBOOK.md`: repeatable steps for starting the local app and controlling the built-in Codex browser.
 - `src/main.jsx`: main React app, routes, admin UI, match cards, public picks, leaderboard, live match center.
 - `src/lib/scoring.js`: final-score leaderboard rules.
 - `src/lib/livePoints.js`: live leaderboard and live prediction points.

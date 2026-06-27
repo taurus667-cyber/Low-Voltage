@@ -89,6 +89,43 @@ test('builds an official placeholder skeleton when fixtures are not imported yet
   assert.equal(bracket.rounds.at(-1).matches[0].bracket_slot, 'M104');
 });
 
+test('resolves completed group winners into direct Round of 32 placeholder seeds', () => {
+  const bracket = buildBracket([
+    ...completeGroup('Group D', ['United States', 'Australia', 'Paraguay', 'Turkiye']),
+    ...completeGroup('Group E', ['Germany', 'Ivory Coast', 'Ecuador', 'Curacao']),
+    ...completeGroup('Group I', ['France', 'Norway', 'Senegal', 'Iraq']),
+  ]);
+  const roundOf32 = bracket.rounds.find((round) => round.key === 'round-of-32').matches;
+
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M79').team_a, 'Germany');
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M80').team_a, 'France');
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M81').team_a, 'United States');
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M79').team_b, 'Best 3rd Group A/B/C/D/F');
+});
+
+test('does not duplicate resolved group seeds already imported as concrete fixtures', () => {
+  const bracket = buildBracket([
+    knockout({
+      id: 'provider-germany',
+      bracket_slot: 'M76',
+      team_a: 'Germany',
+      team_b: 'Paraguay',
+    }),
+    knockout({
+      id: 'provider-usa',
+      bracket_slot: 'M82',
+      team_a: 'USA',
+      team_b: 'Bosnia & Herzegovina',
+    }),
+    ...completeGroup('Group D', ['United States', 'Australia', 'Paraguay', 'Turkiye']),
+    ...completeGroup('Group E', ['Germany', 'Ivory Coast', 'Ecuador', 'Curacao']),
+  ]);
+  const roundOf32 = bracket.rounds.find((round) => round.key === 'round-of-32').matches;
+
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M79').team_a, 'Winner Group E');
+  assert.equal(roundOf32.find((match) => match.bracket_slot === 'M81').team_a, 'Winner Group D');
+});
+
 function knockout(overrides = {}) {
   return {
     id: 'match',
@@ -104,5 +141,32 @@ function knockout(overrides = {}) {
     team_b_score: null,
     is_published: true,
     ...overrides,
+  };
+}
+
+function completeGroup(groupName, teams) {
+  return [
+    groupMatch(groupName, teams[0], teams[1], 3, 0),
+    groupMatch(groupName, teams[0], teams[2], 2, 0),
+    groupMatch(groupName, teams[0], teams[3], 4, 1),
+    groupMatch(groupName, teams[1], teams[2], 1, 0),
+    groupMatch(groupName, teams[1], teams[3], 2, 0),
+    groupMatch(groupName, teams[2], teams[3], 1, 0),
+  ];
+}
+
+let groupMatchId = 0;
+function groupMatch(groupName, teamA, teamB, scoreA, scoreB) {
+  groupMatchId += 1;
+  return {
+    id: `group-${groupMatchId}`,
+    team_a: teamA,
+    team_b: teamB,
+    team_a_score: scoreA,
+    team_b_score: scoreB,
+    stage: 'Group Stage',
+    group_name: groupName,
+    kickoff_time: '2026-06-20T12:00:00Z',
+    is_published: true,
   };
 }

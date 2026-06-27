@@ -12,6 +12,8 @@ import {
   isPlaceholderTeam,
   normalizeBracketRound,
 } from '../src/lib/bracket.js';
+import { calculateGroupStandings } from '../src/lib/standings.js';
+import { teamIdentity } from '../src/lib/teamMetadata.js';
 
 export const KNOCKOUT_FIXTURE_DATES = [
   '2026-06-28',
@@ -100,11 +102,18 @@ export async function fetchProviderKnockoutFixtures(apiKey, tournament) {
 }
 
 export function buildBracketRows({ existingRows, providerFixtures = [], tournament = {}, now = new Date().toISOString() }) {
-  const slotMatches = matchProviderFixturesToSlots(providerFixtures, existingRows);
+  const existingMatches = uniqueExistingRows(existingRows);
+  const groupStandings = calculateGroupStandings(existingMatches);
+  const slotMatches = matchProviderFixturesToSlots(providerFixtures, existingRows, { groupStandings });
   const rows = OFFICIAL_KNOCKOUT_PLACEHOLDERS.map((slot) => {
     const existing = existingRows.get(slot.bracket_slot) || existingRows.get(slot.external_match_id);
     const providerFixture = slotMatches.get(slot.bracket_slot);
-    return buildBracketRow(slot, existing, providerFixture, tournament, now);
+    const staleProviderMatch = Boolean(
+      existing?.live_source_match_id &&
+      !providerFixture &&
+      providerFixtures.some((fixture) => getProviderFixtureId(fixture) === String(existing.live_source_match_id)),
+    );
+    return buildBracketRow(slot, existing, providerFixture, tournament, now, { staleProviderMatch });
   });
   const matchedProviderFixtureIds = new Set([...slotMatches.values()].map(getProviderFixtureId).filter(Boolean));
   const missingVenues = providerFixtures.filter((fixture) =>
@@ -117,11 +126,12 @@ export function buildBracketRows({ existingRows, providerFixtures = [], tourname
   return { rows, matchedProviderFixtureIds, missingVenues, unmatchedProviderFixtures };
 }
 
-function buildBracketRow(slot, existing, providerFixture, tournament, now) {
+function buildBracketRow(slot, existing, providerFixture, tournament, now, options = {}) {
   const providerTeamA = providerFixture?.teams?.home?.name || '';
   const providerTeamB = providerFixture?.teams?.away?.name || '';
-  const teamA = providerTeamA || keepRealTeam(existing?.team_a, slot.team_a);
-  const teamB = providerTeamB || keepRealTeam(existing?.team_b, slot.team_b);
+  const keepExistingTeam = !options.staleProviderMatch;
+  const teamA = providerTeamA || (keepExistingTeam ? keepRealTeam(existing?.team_a, slot.team_a) : slot.team_a);
+  const teamB = providerTeamB || (keepExistingTeam ? keepRealTeam(existing?.team_b, slot.team_b) : slot.team_b);
   const hasConcreteTeams = !isPlaceholderTeam(teamA) && !isPlaceholderTeam(teamB);
   const providerVenue = getProviderVenue(providerFixture);
   const providerFixtureId = getProviderFixtureId(providerFixture);
@@ -145,30 +155,47 @@ function buildBracketRow(slot, existing, providerFixture, tournament, now) {
     is_published: hasConcreteTeams,
     team_a_score: existing?.team_a_score ?? null,
     team_b_score: existing?.team_b_score ?? null,
-    live_source: providerFixture ? 'API-Football' : existing?.live_source || null,
-    live_source_match_id: providerFixtureId || existing?.live_source_match_id || null,
-    team_a_source_id: providerFixture?.teams?.home?.id ? String(providerFixture.teams.home.id) : existing?.team_a_source_id || null,
-    team_b_source_id: providerFixture?.teams?.away?.id ? String(providerFixture.teams.away.id) : existing?.team_b_source_id || null,
+    live_source: providerFixture ? 'API-Football' : (options.staleProviderMatch ? null : existing?.live_source || null),
+    live_source_match_id: providerFixtureId || (options.staleProviderMatch ? null : existing?.live_source_match_id || null),
+    team_a_source_id: providerFixture?.teams?.home?.id ? String(providerFixture.teams.home.id) : (options.staleProviderMatch ? null : existing?.team_a_source_id || null),
+    team_b_source_id: providerFixture?.teams?.away?.id ? String(providerFixture.teams.away.id) : (options.staleProviderMatch ? null : existing?.team_b_source_id || null),
     updated_at: now,
     last_synced_at: now,
   };
 }
 
-export function matchProviderFixturesToSlots(providerFixtures = [], existingRows = new Map()) {
+export function matchProviderFixturesToSlots(providerFixtures = [], existingRows = new Map(), options = {}) {
   const matches = new Map();
   const usedFixtureIds = new Set();
+  const groupStandings = options.groupStandings || calculateGroupStandings(uniqueExistingRows(existingRows));
+  const resolvedSlots = OFFICIAL_KNOCKOUT_PLACEHOLDERS.map((slot) => ({
+    ...slot,
+    resolvedTeamA: resolveDirectGroupSeed(slot.team_a, groupStandings),
+    resolvedTeamB: resolveDirectGroupSeed(slot.team_b, groupStandings),
+  }));
 
-  OFFICIAL_KNOCKOUT_PLACEHOLDERS.forEach((slot) => {
+  providerFixtures
+    .filter((fixture) => !usedFixtureIds.has(getProviderFixtureId(fixture)))
+    .forEach((fixture) => {
+      const slot = findBestResolvedSlot(fixture, resolvedSlots, matches);
+      if (!slot) return;
+      matches.set(slot.bracket_slot, fixture);
+      usedFixtureIds.add(getProviderFixtureId(fixture));
+    });
+
+  resolvedSlots.forEach((slot) => {
+    if (matches.has(slot.bracket_slot)) return;
     const existing = existingRows.get(slot.bracket_slot) || existingRows.get(slot.external_match_id);
     const existingProviderId = String(existing?.live_source_match_id || '');
-    if (!existingProviderId) return;
+    if (!existingProviderId || usedFixtureIds.has(existingProviderId)) return;
     const fixture = providerFixtures.find((row) => getProviderFixtureId(row) === existingProviderId);
     if (!fixture) return;
+    if (!fixtureFitsResolvedSlot(fixture, slot)) return;
     matches.set(slot.bracket_slot, fixture);
     usedFixtureIds.add(existingProviderId);
   });
 
-  const slotsByRoundDate = groupSlotsByRoundDate(OFFICIAL_KNOCKOUT_PLACEHOLDERS);
+  const slotsByRoundDate = groupSlotsByRoundDate(resolvedSlots);
   const fixturesByRoundDate = groupFixturesByRoundDate(
     providerFixtures.filter((fixture) => !usedFixtureIds.has(getProviderFixtureId(fixture))),
   );
@@ -186,9 +213,7 @@ export function matchProviderFixturesToSlots(providerFixtures = [], existingRows
   const remainingFixturesByRound = groupFixturesByRound(
     providerFixtures.filter((fixture) => !usedFixtureIds.has(getProviderFixtureId(fixture))),
   );
-  const remainingSlotsByRound = groupSlotsByRound(
-    OFFICIAL_KNOCKOUT_PLACEHOLDERS.filter((slot) => !matches.has(slot.bracket_slot)),
-  );
+  const remainingSlotsByRound = groupSlotsByRound(resolvedSlots.filter((slot) => !matches.has(slot.bracket_slot)));
 
   remainingFixturesByRound.forEach((fixtures, roundKey) => {
     const slots = remainingSlotsByRound.get(roundKey) || [];
@@ -249,6 +274,77 @@ function keepRealTeam(current, fallback) {
 
 function keepRealVenue(current, fallback) {
   return current && !/venue tbd/i.test(current) ? current : fallback;
+}
+
+function uniqueExistingRows(existingRows = new Map()) {
+  const rowsById = new Map();
+  [...existingRows.values()].forEach((row) => {
+    const key = row?.id || `${row?.external_match_id || ''}:${row?.bracket_slot || ''}:${row?.team_a || ''}:${row?.team_b || ''}`;
+    if (key) rowsById.set(key, row);
+  });
+  return [...rowsById.values()];
+}
+
+function findBestResolvedSlot(fixture, slots, matches) {
+  const candidates = slots
+    .filter((slot) => !matches.has(slot.bracket_slot))
+    .filter((slot) => providerRoundKey(fixture) === slot.bracket_round)
+    .map((slot) => ({ slot, score: scoreResolvedSlotFit(fixture, slot) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || compareSlots(a.slot, b.slot));
+
+  if (!candidates.length) return null;
+  if (candidates.length > 1 && candidates[0].score === candidates[1].score) return null;
+  return candidates[0].slot;
+}
+
+function fixtureFitsResolvedSlot(fixture, slot) {
+  const score = scoreResolvedSlotFit(fixture, slot);
+  if (score > 0) return true;
+  return !slotHasResolvedTeam(slot);
+}
+
+function scoreResolvedSlotFit(fixture, slot) {
+  const fixtureTeams = getFixtureTeamSlugs(fixture);
+  let score = 0;
+
+  [slot.resolvedTeamA, slot.resolvedTeamB].forEach((team) => {
+    if (isPlaceholderTeam(team)) return;
+    score += fixtureTeams.has(teamIdentity(team).slug) ? 2 : -3;
+  });
+
+  return score;
+}
+
+function slotHasResolvedTeam(slot) {
+  return [slot.resolvedTeamA, slot.resolvedTeamB].some((team) => team && !isPlaceholderTeam(team));
+}
+
+function getFixtureTeamSlugs(fixture) {
+  return new Set([
+    fixture?.teams?.home?.name,
+    fixture?.teams?.away?.name,
+  ].filter(Boolean).map((team) => teamIdentity(team).slug));
+}
+
+function resolveDirectGroupSeed(label, groupStandings = []) {
+  const raw = String(label || '').trim();
+  const match = raw.match(/^(Winner|Runner-up)\s+Group\s+([A-L])$/i);
+  if (!match) return label;
+
+  const [, seedType, groupLetter] = match;
+  const group = groupStandings.find((item) =>
+    String(item.groupName || '').trim().toLowerCase() === `group ${groupLetter.toLowerCase()}`,
+  );
+  if (!isCompleteGroup(group)) return label;
+
+  const position = /^winner$/i.test(seedType) ? 1 : 2;
+  return group.rows.find((row) => row.position === position)?.team || label;
+}
+
+function isCompleteGroup(group) {
+  if (!group?.rows?.length) return false;
+  return group.rows.length >= 4 && group.rows.every((row) => Number(row.played) >= 3);
 }
 
 function isProviderKnockoutFixture(fixture) {

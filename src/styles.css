@@ -2633,6 +2633,73 @@ th {
   align-items: start;
 }
 
+.admin-collapse-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-collapse {
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-collapse > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 1rem 1.1rem;
+  font-weight: 800;
+}
+
+.admin-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-collapse > summary::before {
+  content: '+';
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: #eaf6f2;
+  color: #0f766e;
+  flex: 0 0 auto;
+}
+
+.admin-collapse[open] > summary::before {
+  content: '-';
+}
+
+.admin-collapse > summary span {
+  flex: 1;
+}
+
+.admin-collapse > summary em {
+  border-radius: 999px;
+  background: #f0f8f5;
+  color: #315b52;
+  font-style: normal;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.65rem;
+  white-space: nowrap;
+}
+
+.admin-collapse-body {
+  border-top: 1px solid #d6e4df;
+  padding: 1rem;
+}
+
+.admin-collapse-body > .panel {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
 .clone-panel,
 .family-stats-panel {
   margin-bottom: 1rem;
