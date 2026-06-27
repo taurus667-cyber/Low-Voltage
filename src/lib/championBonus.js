@@ -148,7 +148,7 @@ export function buildChampionBonusLeaderboard({
       };
     })
     .sort((a, b) =>
-      b.projected_total_points - a.projected_total_points ||
+      (bonus.finalized ? b.projected_total_points - a.projected_total_points : 0) ||
       b.total_points - a.total_points ||
       b.exact_score_count - a.exact_score_count ||
       b.correct_outcome_count - a.correct_outcome_count ||

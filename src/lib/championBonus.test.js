@@ -63,18 +63,72 @@ test('finalized champion awards only players who chose the champion', () => {
   assert.equal(bonus.bonusByPlayer.get('p3').champion_bonus, 0);
 });
 
-test('leaderboard rows include projected champion bonus totals', () => {
+test('leaderboard rows show projected bonus without reranking current points', () => {
   const rows = buildChampionBonusLeaderboard({
-    players,
-    matches: [],
-    predictions: [],
+    players: [
+      ...players,
+      { id: 'p6', tournament_id: 't1', name: 'Point Leader', is_active: true },
+    ],
+    predictions: [
+      {
+        id: 'pred-1',
+        player_id: 'p6',
+        match_id: 'm1',
+        predicted_team_a_score: 1,
+        predicted_team_b_score: 0,
+      },
+    ],
+    matches: [{
+      id: 'm1',
+      is_published: true,
+      status: 'finished',
+      team_a: 'A',
+      team_b: 'B',
+      team_a_score: 1,
+      team_b_score: 0,
+      kickoff_time: '2026-06-20T12:00:00Z',
+    }],
     picks,
     tournament,
   });
 
-  assert.equal(rows[0].player_id, 'p3');
-  assert.equal(rows[0].potential_champion_bonus, 3);
-  assert.equal(rows[0].projected_total_points, 3);
+  assert.equal(rows[0].player_id, 'p6');
+  assert.equal(rows.find((row) => row.player_id === 'p3').potential_champion_bonus, 4);
+  assert.equal(rows.find((row) => row.player_id === 'p3').projected_total_points, 4);
+});
+
+test('finalized champion bonus can rerank final totals', () => {
+  const rows = buildChampionBonusLeaderboard({
+    players: [
+      { id: 'p1', tournament_id: 't1', name: 'Base Leader', is_active: true },
+      { id: 'p2', tournament_id: 't1', name: 'Champion Picker', is_active: true },
+    ],
+    matches: [{
+      id: 'm1',
+      is_published: true,
+      status: 'finished',
+      team_a: 'A',
+      team_b: 'B',
+      team_a_score: 1,
+      team_b_score: 0,
+      kickoff_time: '2026-06-20T12:00:00Z',
+    }],
+    predictions: [
+      { id: 'pred-1', player_id: 'p1', match_id: 'm1', predicted_team_a_score: 2, predicted_team_b_score: 0 },
+    ],
+    picks: [
+      { id: 'champ-1', tournament_id: 't1', player_id: 'p2', team_slug: 'brazil', team_name: 'Brazil' },
+    ],
+    tournament: {
+      ...tournament,
+      champion_bonus_winner_team_slug: 'brazil',
+      champion_bonus_winner_team_name: 'Brazil',
+    },
+  });
+
+  assert.equal(rows[0].player_id, 'p2');
+  assert.equal(rows[0].champion_bonus, 2);
+  assert.equal(rows[0].projected_total_points, 2);
 });
 
 test('Round of 32 cards include concrete teams and disabled placeholders', () => {
