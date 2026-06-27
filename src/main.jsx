@@ -3174,7 +3174,17 @@ function AdminTools({
         parts.push(`insights ${payload.prematch.aids || 0}, odds ${payload.prematch.odds || 0}, links ${payload.prematch.linkedFixtures || 0}`);
       }
       if (payload.bracket) {
-        parts.push(`bracket ${payload.bracket.matches || 0} slots`);
+        const bracketParts = [
+          `bracket ${payload.bracket.concrete || 0} concrete`,
+          `${payload.bracket.placeholders || 0} placeholders`,
+        ];
+        if (payload.bracket.providerFixtures) bracketParts.push(`${payload.bracket.providerFixtures} provider fixtures`);
+        if (payload.bracket.providerMatched) bracketParts.push(`${payload.bracket.providerMatched} matched`);
+        if (payload.bracket.missingVenueFixtures) bracketParts.push(`${payload.bracket.missingVenueFixtures} missing venues`);
+        if (payload.bracket.unmatchedProviderFixtures?.length) {
+          bracketParts.push(`${payload.bracket.unmatchedProviderFixtures.length} unmatched`);
+        }
+        parts.push(bracketParts.join(', '));
       }
       if (payload.live) {
         parts.push(`matches ${payload.live.synced || 0}, events ${payload.live.events || 0}, stats ${payload.live.statistics || 0}, top 10 new ${payload.live.top10?.created || 0}`);
