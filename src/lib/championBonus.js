@@ -3,10 +3,27 @@ import { calculateLeaderboard } from './scoring.js';
 import { isPlayerActive, isPublicStatsPlayer } from './playerVisibility.js';
 import { normalizeName, teamIdentity } from './teamMetadata.js';
 
-export const DEFAULT_CHAMPION_BONUS_LOCK_AT = '2026-06-28T16:00:00Z';
+export const LEGACY_CHAMPION_BONUS_LOCK_AT = '2026-06-28T16:00:00Z';
+export const DEFAULT_CHAMPION_BONUS_LOCK_AT = '2026-06-28T19:00:00Z';
 
-export function getChampionBonusLockAt(tournament) {
-  return tournament?.champion_bonus_lock_at || DEFAULT_CHAMPION_BONUS_LOCK_AT;
+export function getDefaultChampionBonusLockAt(matches = []) {
+  const concreteRoundOf32Kickoffs = matches
+    .filter((match) => (match.bracket_round === 'round-of-32' || match.stage === 'Round of 32'))
+    .filter((match) => !isPlaceholderTeam(match.team_a) && !isPlaceholderTeam(match.team_b))
+    .map((match) => new Date(match.kickoff_time).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  return concreteRoundOf32Kickoffs.length
+    ? new Date(concreteRoundOf32Kickoffs[0]).toISOString()
+    : DEFAULT_CHAMPION_BONUS_LOCK_AT;
+}
+
+export function getChampionBonusLockAt(tournament, matches = []) {
+  const configured = tournament?.champion_bonus_lock_at;
+  const fallback = getDefaultChampionBonusLockAt(matches);
+  if (!configured || configured === LEGACY_CHAMPION_BONUS_LOCK_AT) return fallback;
+  return configured;
 }
 
 export function getChampionBonusChampion(tournament) {
@@ -16,8 +33,8 @@ export function getChampionBonusChampion(tournament) {
   return { slug, name };
 }
 
-export function isChampionBonusLocked(tournament, now = new Date()) {
-  const lockAt = getChampionBonusLockAt(tournament);
+export function isChampionBonusLocked(tournament, now = new Date(), matches = []) {
+  const lockAt = getChampionBonusLockAt(tournament, matches);
   const timestamp = new Date(lockAt).getTime();
   return Number.isFinite(timestamp) && now.getTime() >= timestamp;
 }
@@ -63,6 +80,7 @@ export function getCurrentChampionPick(picks = [], playerId) {
 
 export function calculateChampionBonus({
   players = [],
+  matches = [],
   picks = [],
   tournament = {},
   publicOnly = true,
@@ -74,7 +92,7 @@ export function calculateChampionBonus({
   const pool = eligiblePlayers.length;
   const champion = getChampionBonusChampion(tournament);
   const finalized = Boolean(champion);
-  const locked = isChampionBonusLocked(tournament, now);
+  const locked = isChampionBonusLocked(tournament, now, matches);
   const pickCountsByTeam = new Map();
 
   eligiblePicks.forEach((pick) => {
@@ -111,7 +129,7 @@ export function calculateChampionBonus({
     champion,
     finalized,
     locked,
-    lock_at: getChampionBonusLockAt(tournament),
+    lock_at: getChampionBonusLockAt(tournament, matches),
   };
 }
 
@@ -131,7 +149,7 @@ export function buildChampionBonusLeaderboard({
 } = {}) {
   const eligiblePlayers = players.filter(publicOnly ? isPublicStatsPlayer : isPlayerActive);
   const baseRows = calculateLeaderboard(eligiblePlayers, matches, predictions);
-  const bonus = calculateChampionBonus({ players, picks, tournament, publicOnly });
+  const bonus = calculateChampionBonus({ players, matches, picks, tournament, publicOnly });
   return baseRows
     .map((row) => {
       const playerBonus = bonus.bonusByPlayer.get(row.player_id);

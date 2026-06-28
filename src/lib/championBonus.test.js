@@ -4,6 +4,7 @@ import {
   buildChampionBonusLeaderboard,
   buildChampionBonusTeams,
   calculateChampionBonus,
+  getChampionBonusLockAt,
   getPotentialBonusForTeam,
 } from './championBonus.js';
 
@@ -27,6 +28,29 @@ const picks = [
   { id: 'c4', tournament_id: 't1', player_id: 'p4', team_slug: 'brazil', team_name: 'Brazil' },
   { id: 'c5', tournament_id: 't1', player_id: 'p5', team_slug: 'japan', team_name: 'Japan' },
 ];
+
+test('legacy champion bonus cutoff follows first concrete Round of 32 kickoff', () => {
+  const lockAt = getChampionBonusLockAt(tournament, [
+    {
+      id: 'm73',
+      stage: 'Round of 32',
+      bracket_round: 'round-of-32',
+      team_a: 'Winner Group A',
+      team_b: 'Runner-up Group C',
+      kickoff_time: '2026-06-28T17:00:00Z',
+    },
+    {
+      id: 'm75',
+      stage: 'Round of 32',
+      bracket_round: 'round-of-32',
+      team_a: 'South Africa',
+      team_b: 'Canada',
+      kickoff_time: '2026-06-28T19:00:00Z',
+    },
+  ]);
+
+  assert.equal(lockAt, '2026-06-28T19:00:00.000Z');
+});
 
 test('bonus pool equals active public player count and ignores hidden players', () => {
   const bonus = calculateChampionBonus({ players, picks, tournament, now: new Date('2026-06-27T12:00:00Z') });

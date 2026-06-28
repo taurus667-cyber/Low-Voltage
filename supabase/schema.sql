@@ -12,7 +12,7 @@ create table if not exists public.tournaments (
   source_tournament_id uuid references public.tournaments(id) on delete set null,
   parent_tournament_id uuid references public.tournaments(id) on delete set null,
   last_internal_refresh_at timestamp with time zone,
-  champion_bonus_lock_at timestamp with time zone default '2026-06-28T16:00:00Z',
+  champion_bonus_lock_at timestamp with time zone default '2026-06-28T19:00:00Z',
   champion_bonus_winner_team_slug text,
   champion_bonus_winner_team_name text,
   is_active boolean default false,
@@ -93,7 +93,7 @@ alter table public.tournaments add column if not exists is_clone boolean not nul
 alter table public.tournaments add column if not exists source_tournament_id uuid references public.tournaments(id) on delete set null;
 alter table public.tournaments add column if not exists parent_tournament_id uuid references public.tournaments(id) on delete set null;
 alter table public.tournaments add column if not exists last_internal_refresh_at timestamp with time zone;
-alter table public.tournaments add column if not exists champion_bonus_lock_at timestamp with time zone default '2026-06-28T16:00:00Z';
+alter table public.tournaments add column if not exists champion_bonus_lock_at timestamp with time zone default '2026-06-28T19:00:00Z';
 alter table public.tournaments add column if not exists champion_bonus_winner_team_slug text;
 alter table public.tournaments add column if not exists champion_bonus_winner_team_name text;
 alter table public.matches add column if not exists source_match_id uuid references public.matches(id) on delete set null;
@@ -457,7 +457,7 @@ with check (
   exists (
     select 1 from public.tournaments
     where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
   )
 );
 drop policy if exists "champion_winner_picks_update_before_lock" on public.champion_winner_picks;
@@ -467,7 +467,7 @@ using (
   exists (
     select 1 from public.tournaments
     where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
   )
 )
 with check (
@@ -481,7 +481,7 @@ with check (
   exists (
     select 1 from public.tournaments
     where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T16:00:00Z'::timestamptz) > now()
+      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
   )
 );
 drop policy if exists "match_events_select_all" on public.match_events;

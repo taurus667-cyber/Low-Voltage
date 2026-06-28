@@ -1765,8 +1765,8 @@ function LeaderboardPage({ players, matches, predictions, championPicks, tournam
     [publicPlayers, matches, predictions, championPicks, tournament],
   );
   const bonus = useMemo(
-    () => calculateChampionBonus({ players: publicPlayers, picks: championPicks, tournament, publicOnly: true }),
-    [publicPlayers, championPicks, tournament],
+    () => calculateChampionBonus({ players: publicPlayers, matches, picks: championPicks, tournament, publicOnly: true }),
+    [publicPlayers, matches, championPicks, tournament],
   );
   const rows = bonusRows;
   const visibleRows = rows.filter((row) => row.predictions_submitted_count > 0);
@@ -2536,11 +2536,11 @@ function ChampionBonusPage({
   const [savingTeam, setSavingTeam] = useState('');
   const cards = useMemo(() => buildChampionBonusTeams(matches, teams), [matches, teams]);
   const publicBonus = useMemo(
-    () => calculateChampionBonus({ players, picks: championPicks, tournament, publicOnly: true }),
-    [players, championPicks, tournament],
+    () => calculateChampionBonus({ players, matches, picks: championPicks, tournament, publicOnly: true }),
+    [players, matches, championPicks, tournament],
   );
   const currentPick = getCurrentChampionPick(championPicks, player?.id);
-  const locked = isChampionBonusLocked(tournament);
+  const locked = isChampionBonusLocked(tournament, new Date(), matches);
   const canPick = player && isPlayerActive(player) && !locked;
   const availableTeamCount = cards.filter((card) => card.concrete).length;
   const picksByTeam = useMemo(() => {
@@ -2566,7 +2566,7 @@ function ChampionBonusPage({
       return;
     }
     if (locked) {
-      setError(`Champion picks are locked since ${formatDate(getChampionBonusLockAt(tournament))}.`);
+      setError(`Champion picks are locked since ${formatDate(getChampionBonusLockAt(tournament, matches))}.`);
       return;
     }
     if (!card.concrete) {
@@ -2613,7 +2613,7 @@ function ChampionBonusPage({
           <span>{publicBonus.finalized ? 'Final champion' : locked ? 'Locked' : 'Open'}</span>
           <strong>{publicBonus.champion?.name || (locked ? 'Read-only' : 'Choose now')}</strong>
           <em>Lock: {formatDate(publicBonus.lock_at)}</em>
-          <button onClick={() => downloadChampionBonusCalendar(tournament)} disabled={locked}>
+          <button onClick={() => downloadChampionBonusCalendar(tournament, matches)} disabled={locked}>
             Add cutoff to calendar
           </button>
         </div>
@@ -3674,19 +3674,19 @@ function ChampionBonusAdminPanel({
   setMessage,
   setError,
 }) {
-  const [lockAt, setLockAt] = useState(() => toLocalInputValue(getChampionBonusLockAt(tournament)));
+  const [lockAt, setLockAt] = useState(() => toLocalInputValue(getChampionBonusLockAt(tournament, matches)));
   const [championSlug, setChampionSlug] = useState(tournament?.champion_bonus_winner_team_slug || '');
   const [busy, setBusy] = useState('');
   const cards = useMemo(() => buildChampionBonusTeams(matches, teams).filter((card) => card.concrete), [matches, teams]);
   const bonus = useMemo(
-    () => calculateChampionBonus({ players, picks: championPicks, tournament, publicOnly: true }),
-    [players, championPicks, tournament],
+    () => calculateChampionBonus({ players, matches, picks: championPicks, tournament, publicOnly: true }),
+    [players, matches, championPicks, tournament],
   );
 
   useEffect(() => {
-    setLockAt(toLocalInputValue(getChampionBonusLockAt(tournament)));
+    setLockAt(toLocalInputValue(getChampionBonusLockAt(tournament, matches)));
     setChampionSlug(tournament?.champion_bonus_winner_team_slug || '');
-  }, [tournament?.id, tournament?.champion_bonus_lock_at, tournament?.champion_bonus_winner_team_slug]);
+  }, [tournament?.id, tournament?.champion_bonus_lock_at, tournament?.champion_bonus_winner_team_slug, matches]);
 
   const runRequest = async (body) => {
     const response = await fetch('/api/champion-bonus', {
@@ -4652,8 +4652,8 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
-function downloadChampionBonusCalendar(tournament) {
-  const lockAt = getChampionBonusLockAt(tournament);
+function downloadChampionBonusCalendar(tournament, matches = []) {
+  const lockAt = getChampionBonusLockAt(tournament, matches);
   const start = new Date(lockAt);
   if (Number.isNaN(start.getTime())) return;
   const end = new Date(start.getTime() + 15 * 60 * 1000);
