@@ -1569,6 +1569,22 @@ h2 {
   background: #ffffff;
 }
 
+.leaderboard-table-wrap table {
+  min-width: 920px;
+  table-layout: auto;
+}
+
+.leaderboard-table-wrap th,
+.leaderboard-table-wrap td {
+  white-space: nowrap;
+}
+
+.leaderboard-table-wrap th:nth-child(2),
+.leaderboard-table-wrap td:nth-child(2) {
+  min-width: 220px;
+  white-space: normal;
+}
+
 .group-table-list,
 .nation-grid {
   display: grid;
@@ -1953,7 +1969,8 @@ th {
 }
 
 .leaderboard-player-main strong {
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .leaderboard-player > span:not(.leaderboard-player-main) {

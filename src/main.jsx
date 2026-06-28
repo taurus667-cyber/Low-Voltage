@@ -1784,7 +1784,7 @@ function LeaderboardPage({ players, matches, predictions, championPicks, tournam
           ? `Champion bonus is final. ${bonus.champion?.name || 'Champion'} picks have been added to the total.`
           : `Ranking is based on current points. Potential Champion Bonus is shown separately as a what-if projection. Pool: ${bonus.pool} point${bonus.pool === 1 ? '' : 's'} split by champion pick.`}
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap leaderboard-table-wrap">
         <table>
           <thead>
             <tr>
