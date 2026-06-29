@@ -259,6 +259,10 @@ create table if not exists public.champion_winner_picks (
   team_name text not null,
   team_country_code text,
   team_flag_url text,
+  stage_key text not null default 'round-of-32' check (stage_key in ('round-of-32', 'round-of-16', 'quarter-finals', 'semi-finals')),
+  stage_label text not null default 'Round of 32',
+  stage_weight numeric not null default 1 check (stage_weight in (1, 0.5, 0.25, 0.125)),
+  stage_locked_at timestamp with time zone,
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now(),
   unique(player_id, tournament_id)
@@ -453,21 +457,17 @@ with check (
       and players.is_active = true
       and players.tournament_id is not distinct from champion_winner_picks.tournament_id
   )
-  and
-  exists (
-    select 1 from public.tournaments
-    where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
-  )
+  and coalesce(champion_winner_picks.stage_locked_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
 );
 drop policy if exists "champion_winner_picks_update_before_lock" on public.champion_winner_picks;
 create policy "champion_winner_picks_update_before_lock" on public.champion_winner_picks
 for update
 using (
   exists (
-    select 1 from public.tournaments
-    where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
+    select 1 from public.players
+    where players.id = champion_winner_picks.player_id
+      and players.is_active = true
+      and players.tournament_id is not distinct from champion_winner_picks.tournament_id
   )
 )
 with check (
@@ -477,12 +477,7 @@ with check (
       and players.is_active = true
       and players.tournament_id is not distinct from champion_winner_picks.tournament_id
   )
-  and
-  exists (
-    select 1 from public.tournaments
-    where tournaments.id is not distinct from champion_winner_picks.tournament_id
-      and coalesce(tournaments.champion_bonus_lock_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
-  )
+  and coalesce(champion_winner_picks.stage_locked_at, '2026-06-28T19:00:00Z'::timestamptz) > now()
 );
 drop policy if exists "match_events_select_all" on public.match_events;
 create policy "match_events_select_all" on public.match_events for select using (true);

@@ -2061,6 +2061,80 @@ th {
   font-size: 0.85rem;
 }
 
+.champion-stage-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.champion-stage-badge {
+  --stage-bg: #e9f7f4;
+  --stage-fg: #0f766e;
+  --stage-border: #9bd5cb;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  border: 1px solid var(--stage-border);
+  border-radius: 999px;
+  background: var(--stage-bg);
+  color: var(--stage-fg);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.champion-stage-badge strong {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  background: var(--stage-fg);
+  color: #ffffff;
+  line-height: 1;
+}
+
+.champion-stage-badge em {
+  color: inherit;
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.champion-stage-teal {
+  --stage-bg: #e9f7f4;
+  --stage-fg: #0f766e;
+  --stage-border: #9bd5cb;
+}
+
+.champion-stage-blue {
+  --stage-bg: #eaf2ff;
+  --stage-fg: #2557a7;
+  --stage-border: #a8c5f6;
+}
+
+.champion-stage-amber {
+  --stage-bg: #fff5d6;
+  --stage-fg: #93620b;
+  --stage-border: #e6c55f;
+}
+
+.champion-stage-rose {
+  --stage-bg: #fff0f2;
+  --stage-fg: #b42342;
+  --stage-border: #f0a8b7;
+}
+
+.champion-change-warning {
+  border: 1px solid #e6c55f;
+  border-radius: 8px;
+  background: #fff8df;
+  color: #68480a;
+  padding: 0.85rem;
+  font-weight: 900;
+}
+
 .champion-current-pick {
   display: flex;
   flex-wrap: wrap;
@@ -2120,6 +2194,21 @@ th {
 .champion-team-card.selected {
   border-color: #0f766e;
   box-shadow: 0 12px 30px rgba(15, 118, 110, 0.16);
+}
+
+.champion-team-card.champion-stage-blue.selected {
+  border-color: #2557a7;
+  box-shadow: 0 12px 30px rgba(37, 87, 167, 0.16);
+}
+
+.champion-team-card.champion-stage-amber.selected {
+  border-color: #93620b;
+  box-shadow: 0 12px 30px rgba(147, 98, 11, 0.16);
+}
+
+.champion-team-card.champion-stage-rose.selected {
+  border-color: #b42342;
+  box-shadow: 0 12px 30px rgba(180, 35, 66, 0.16);
 }
 
 .champion-team-card.placeholder {

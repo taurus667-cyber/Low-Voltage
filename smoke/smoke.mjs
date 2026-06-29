@@ -573,8 +573,8 @@ async function verifyChampionBonusPage(page) {
   await expectVisible(page, 'text=World Cup winner bonus');
   await expectVisible(page, 'text=Argentina');
   await expectVisible(page, 'text=Brazil');
-  await page.locator('.champion-team-card', { hasText: 'Brazil' }).getByRole('button', { name: 'Pick champion' }).click();
-  await expectVisible(page, 'text=Champion bonus pick saved: Brazil.');
+  await page.locator('.champion-team-card', { hasText: 'Brazil' }).getByRole('button', { name: 'Pick 32 champion' }).click();
+  await expectVisible(page, 'text=Champion bonus pick saved: Brazil');
   await expectVisible(page, 'text=Your champion pick');
   await expectVisible(page, 'text=Selected');
   if (!smokeChampionPicks.some((pick) => pick.player_id === smokePlayer.id && pick.team_slug === 'brazil')) {
@@ -649,7 +649,13 @@ async function verifyHiddenPublicStatsFlow(page) {
     sessionStorage.setItem('admin-password', 'smoke-admin');
   });
   await page.goto(`${baseUrl}/admin`, { waitUntil: 'networkidle' });
-  const row = page.locator('.admin-player-row', { hasText: 'Smoke Tester' }).first();
+  const playersSection = page.locator('details.admin-collapse', { hasText: 'Deactivate duplicate profiles or merge picks into one' });
+  if (!(await playersSection.evaluate((node) => node.open))) {
+    await playersSection.locator('summary').click();
+  }
+  const row = page
+    .locator('.admin-player-row', { hasText: 'Smoke Tester' })
+    .filter({ has: page.getByRole('button', { name: 'Hide from public stats' }) });
   await row.getByRole('button', { name: 'Hide from public stats' }).click();
   await expectVisible(page, 'text=Smoke Tester is hidden from public stats and keeps app access.');
   await page.goto(`${baseUrl}/leaderboard`, { waitUntil: 'networkidle' });

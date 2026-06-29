@@ -5,6 +5,8 @@ import {
   buildChampionBonusTeams,
   calculateChampionBonus,
   getChampionBonusLockAt,
+  getChampionBonusStageCutoff,
+  getChampionBonusStageStatus,
   getPotentialBonusForTeam,
 } from './championBonus.js';
 
@@ -52,6 +54,45 @@ test('legacy champion bonus cutoff follows first concrete Round of 32 kickoff', 
   assert.equal(lockAt, '2026-06-28T19:00:00.000Z');
 });
 
+test('later champion bonus stages use official fallback cutoffs before fixtures are imported', () => {
+  assert.equal(getChampionBonusStageCutoff('round-of-16', tournament, []), '2026-07-04T19:00:00Z');
+  assert.equal(getChampionBonusStageCutoff('quarter-finals', tournament, []), '2026-07-09T19:00:00Z');
+  assert.equal(getChampionBonusStageCutoff('semi-finals', tournament, []), '2026-07-14T19:00:00Z');
+});
+
+test('later champion bonus stages use the first concrete kickoff when available', () => {
+  const cutoff = getChampionBonusStageCutoff('round-of-16', tournament, [
+    {
+      id: 'm89',
+      bracket_round: 'round-of-16',
+      stage: 'Round of 16',
+      team_a: 'Winner M73',
+      team_b: 'Winner M75',
+      kickoff_time: '2026-07-04T17:00:00Z',
+    },
+    {
+      id: 'm90',
+      bracket_round: 'round-of-16',
+      stage: 'Round of 16',
+      team_a: 'Brazil',
+      team_b: 'Japan',
+      kickoff_time: '2026-07-04T18:00:00Z',
+    },
+  ]);
+
+  assert.equal(cutoff, '2026-07-04T18:00:00.000Z');
+});
+
+test('current champion bonus stage advances after each stage cutoff', () => {
+  const beforeRoundOf16 = getChampionBonusStageStatus(tournament, [], new Date('2026-06-29T12:00:00Z'));
+  const beforeQuarterFinals = getChampionBonusStageStatus(tournament, [], new Date('2026-07-05T12:00:00Z'));
+  const beforeSemiFinals = getChampionBonusStageStatus(tournament, [], new Date('2026-07-10T12:00:00Z'));
+
+  assert.equal(beforeRoundOf16.openStage.key, 'round-of-16');
+  assert.equal(beforeQuarterFinals.openStage.key, 'quarter-finals');
+  assert.equal(beforeSemiFinals.openStage.key, 'semi-finals');
+});
+
 test('bonus pool equals active public player count and ignores hidden players', () => {
   const bonus = calculateChampionBonus({ players, picks, tournament, now: new Date('2026-06-27T12:00:00Z') });
 
@@ -85,6 +126,26 @@ test('finalized champion awards only players who chose the champion', () => {
   assert.equal(bonus.bonusByPlayer.get('p1').champion_bonus, 1.5);
   assert.equal(bonus.bonusByPlayer.get('p2').champion_bonus, 1.5);
   assert.equal(bonus.bonusByPlayer.get('p3').champion_bonus, 0);
+});
+
+test('later stage picks use lower weighted pools than Round of 32 picks', () => {
+  const bonus = calculateChampionBonus({
+    players,
+    picks: [
+      { id: 'r32', tournament_id: 't1', player_id: 'p1', team_slug: 'brazil', team_name: 'Brazil', stage_key: 'round-of-32', stage_weight: 1 },
+      { id: 'r16', tournament_id: 't1', player_id: 'p2', team_slug: 'brazil', team_name: 'Brazil', stage_key: 'round-of-16', stage_weight: 0.5 },
+      { id: 'r16b', tournament_id: 't1', player_id: 'p3', team_slug: 'brazil', team_name: 'Brazil', stage_key: 'round-of-16', stage_weight: 0.5 },
+    ],
+    tournament: {
+      ...tournament,
+      champion_bonus_winner_team_slug: 'brazil',
+      champion_bonus_winner_team_name: 'Brazil',
+    },
+  });
+
+  assert.equal(bonus.bonusByPlayer.get('p1').champion_bonus, 3);
+  assert.equal(bonus.bonusByPlayer.get('p2').champion_bonus, 0.8);
+  assert.equal(bonus.bonusByPlayer.get('p3').champion_bonus, 0.8);
 });
 
 test('leaderboard rows show projected bonus without reranking current points', () => {

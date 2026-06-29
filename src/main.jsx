@@ -40,6 +40,8 @@ import {
   buildChampionBonusLeaderboard,
   buildChampionBonusTeams,
   calculateChampionBonus,
+  getChampionBonusStage,
+  getChampionBonusStageStatus,
   getChampionBonusLockAt,
   getCurrentChampionPick,
   getPotentialBonusForTeam,
@@ -2534,21 +2536,27 @@ function ChampionBonusPage({
   routeBase,
 }) {
   const [savingTeam, setSavingTeam] = useState('');
-  const cards = useMemo(() => buildChampionBonusTeams(matches, teams), [matches, teams]);
+  const stageStatus = useMemo(() => getChampionBonusStageStatus(tournament, matches), [tournament, matches]);
+  const activeStage = stageStatus.openStage || getChampionBonusStage('round-of-32');
+  const cards = useMemo(() => buildChampionBonusTeams(matches, teams, activeStage.key), [matches, teams, activeStage.key]);
   const publicBonus = useMemo(
     () => calculateChampionBonus({ players, matches, picks: championPicks, tournament, publicOnly: true }),
     [players, matches, championPicks, tournament],
   );
   const currentPick = getCurrentChampionPick(championPicks, player?.id);
   const locked = isChampionBonusLocked(tournament, new Date(), matches);
-  const canPick = player && isPlayerActive(player) && !locked;
+  const canPick = player && isPlayerActive(player) && !locked && activeStage.available;
   const availableTeamCount = cards.filter((card) => card.concrete).length;
+  const currentPickStage = getChampionBonusStage(currentPick?.stage_key);
+  const currentPickWeight = Number(currentPick?.stage_weight ?? currentPickStage.weight) || currentPickStage.weight;
+  const changingLosesWeight = currentPick && currentPickWeight > activeStage.weight;
   const picksByTeam = useMemo(() => {
     const publicPlayerIds = new Set(players.filter(isPublicStatsPlayer).map((item) => item.id));
     const publicPlayerById = new Map(players.filter(isPublicStatsPlayer).map((item) => [item.id, item]));
     const grouped = new Map();
     championPicks
       .filter((pick) => publicPlayerIds.has(pick.player_id))
+      .filter((pick) => getChampionBonusStage(pick.stage_key).key === activeStage.key)
       .forEach((pick) => {
         const key = pick.team_slug || slugifyTeamName(pick.team_name);
         if (!grouped.has(key)) grouped.set(key, []);
@@ -2556,7 +2564,7 @@ function ChampionBonusPage({
       });
     grouped.forEach((rows) => rows.sort((a, b) => getPlayerDisplayName(a.player).localeCompare(getPlayerDisplayName(b.player))));
     return grouped;
-  }, [players, championPicks]);
+  }, [players, championPicks, activeStage.key]);
 
   const chooseChampion = async (card) => {
     setMessage('');
@@ -2566,11 +2574,13 @@ function ChampionBonusPage({
       return;
     }
     if (locked) {
-      setError(`Champion picks are locked since ${formatDate(getChampionBonusLockAt(tournament, matches))}.`);
+      setError(activeStage.available
+        ? `Champion picks are locked since ${formatDate(activeStage.cutoff)}.`
+        : `${activeStage.label} picks are not open because the bracket data is not ready yet.`);
       return;
     }
     if (!card.concrete) {
-      setError('This Round of 32 slot is not confirmed yet. Pick it after the team is imported.');
+      setError(`This ${activeStage.label} slot is not confirmed yet. Pick it after the team is imported.`);
       return;
     }
     setSavingTeam(card.slug);
@@ -2582,13 +2592,17 @@ function ChampionBonusPage({
         team_name: card.name,
         team_country_code: card.team?.country_code || null,
         team_flag_url: card.team?.flag_url || null,
+        stage_key: activeStage.key,
+        stage_label: activeStage.label,
+        stage_weight: activeStage.weight,
+        stage_locked_at: activeStage.cutoff,
         updated_at: new Date().toISOString(),
       };
       const { error } = await supabase
         .from('champion_winner_picks')
         .upsert(payload, { onConflict: 'player_id,tournament_id' });
       throwIfError(error);
-      setMessage(`Champion bonus pick saved: ${card.name}.`);
+      setMessage(`Champion bonus pick saved: ${card.name} (${activeStage.label}, ${activeStage.weight}x weight).`);
       await refresh();
     } catch (err) {
       setError(formatOptionalTableSetupError(err, 'Champion Bonus is not set up in Supabase yet. Apply the champion_winner_picks migration, then try again.'));
@@ -2603,16 +2617,17 @@ function ChampionBonusPage({
       <section className="panel champion-bonus-hero">
         <div>
           <p className="eyebrow">World Cup winner bonus</p>
-          <h2>Pick the champion from the Round of 32.</h2>
+          <h2>Pick the champion from the {activeStage.label}.</h2>
           <p className="muted">
-            Bonus pool: {publicBonus.eligible_player_count} active public players x 1 = {publicBonus.pool} point{publicBonus.pool === 1 ? '' : 's'}.
+            Bonus pool: {publicBonus.eligible_player_count} active public players x {activeStage.weight} = {Math.round(publicBonus.pool * activeStage.weight * 10) / 10} point{publicBonus.pool === 1 ? '' : 's'}.
             The pool is split between everyone who picked the actual champion.
           </p>
         </div>
         <div className="champion-bonus-status">
-          <span>{publicBonus.finalized ? 'Final champion' : locked ? 'Locked' : 'Open'}</span>
+          <span>{publicBonus.finalized ? 'Final champion' : locked ? 'Locked' : activeStage.available ? 'Open' : 'Waiting'}</span>
           <strong>{publicBonus.champion?.name || (locked ? 'Read-only' : 'Choose now')}</strong>
-          <em>Lock: {formatDate(publicBonus.lock_at)}</em>
+          <StageBadge stage={activeStage} />
+          <em>{activeStage.cutoff ? `Lock: ${formatDate(activeStage.cutoff)}` : 'Cutoff appears when fixtures are ready'}</em>
           <button onClick={() => downloadChampionBonusCalendar(tournament, matches)} disabled={locked}>
             Add cutoff to calendar
           </button>
@@ -2622,24 +2637,32 @@ function ChampionBonusPage({
       <section className="panel champion-bonus-guide" aria-label="Champion Bonus rules">
         <div>
           <h2>How this works</h2>
-          <p>You get <strong>one champion pick</strong>. Pick the team you think will win the World Cup.</p>
+          <p>You get <strong>one active champion pick</strong>. Changing later replaces your old pick and uses the later round's smaller weight.</p>
+        </div>
+        <div className="champion-stage-list">
+          {stageStatus.stages.map((stage) => <StageBadge key={stage.key} stage={stage} />)}
         </div>
         <div className="champion-guide-grid">
           <article>
             <strong>Can I change it?</strong>
-            <p>Yes, until the cutoff. If you pick another team, it replaces your old champion pick.</p>
+            <p>Yes, until the current cutoff. If you change, your pick becomes a {activeStage.label} pick at {activeStage.weight}x weight.</p>
           </article>
           <article>
-            <strong>What if I do not see all 32 teams?</strong>
-            <p>Only confirmed Round of 32 teams can be picked. You can pick from the available teams now, or wait for more teams to appear before the cutoff.</p>
+            <strong>What do early pickers keep?</strong>
+            <p>A Round of 32 pick keeps 1x weight if it is not changed. Changing it later loses that early-pick advantage.</p>
           </article>
           <article>
             <strong>When does it close?</strong>
-            <p>The cutoff is {formatDate(publicBonus.lock_at)}. After that, champion picks are locked.</p>
+            <p>{activeStage.cutoff ? `The ${activeStage.label} cutoff is ${formatDate(activeStage.cutoff)}.` : `${activeStage.label} opens after fixtures are confirmed.`}</p>
           </article>
         </div>
+        {changingLosesWeight && (
+          <p className="champion-change-warning">
+            Your current pick is a {currentPick.stage_label || currentPickStage.label} pick at {currentPickWeight}x weight. If you choose another team now, it becomes a {activeStage.label} pick at {activeStage.weight}x weight.
+          </p>
+        )}
         <p className="muted">
-          Available now: {availableTeamCount} of 32 teams. Waiting teams appear as disabled TBD cards until the bracket data confirms them.
+          Available now: {availableTeamCount} of {activeStage.shortLabel} teams. Waiting teams appear as disabled TBD cards until the bracket data confirms them.
         </p>
       </section>
 
@@ -2648,23 +2671,29 @@ function ChampionBonusPage({
       {player && isPlayerActive(player) && (
         <div className="champion-current-pick">
           <strong>Your champion pick</strong>
-          <span>{currentPick ? currentPick.team_name : locked ? 'No pick submitted before lock.' : 'No champion selected yet.'}</span>
+          <span>
+            {currentPick
+              ? `${currentPick.team_name} (${currentPick.stage_label || currentPickStage.label}, ${currentPickWeight}x weight)`
+              : locked
+                ? 'No pick submitted before lock.'
+                : 'No champion selected yet.'}
+          </span>
         </div>
       )}
 
       <div className="champion-team-grid">
         {cards.map((card) => {
           const rows = picksByTeam.get(card.slug) || [];
-          const potential = getPotentialBonusForTeam(card, publicBonus);
+          const potential = getPotentialBonusForTeam(card, publicBonus, activeStage.key);
           const selected = currentPick && (currentPick.team_slug === card.slug || normalizeName(currentPick.team_name) === normalizeName(card.name));
           return (
-            <article className={`champion-team-card ${selected ? 'selected' : ''} ${card.placeholder ? 'placeholder' : ''}`} key={card.key}>
+            <article className={`champion-team-card champion-stage-${activeStage.color} ${selected ? 'selected' : ''} ${card.placeholder ? 'placeholder' : ''}`} key={card.key}>
               <div className="champion-team-main">
                 <div className="champion-team-title">
                   {card.concrete ? <TeamFlag team={card.team} /> : <span className="flag-placeholder" aria-hidden="true">TBD</span>}
                   <div>
                     <strong>{card.name}</strong>
-                    <span>{card.bracket_slot || 'Round of 32'}</span>
+                    <span>{card.bracket_slot || activeStage.label}</span>
                   </div>
                 </div>
                 <div className="champion-potential">
@@ -2689,14 +2718,24 @@ function ChampionBonusPage({
                 onClick={() => chooseChampion(card)}
                 disabled={!canPick || !card.concrete || savingTeam === card.slug}
               >
-                {savingTeam === card.slug ? 'Saving...' : selected ? 'Selected' : card.concrete ? 'Pick champion' : 'Waiting for team'}
+                {savingTeam === card.slug ? 'Saving...' : selected ? 'Selected' : card.concrete ? `Pick ${activeStage.shortLabel} champion` : 'Waiting for team'}
               </button>
             </article>
           );
         })}
       </div>
-      {!cards.length && <EmptyState text="Round of 32 teams will appear here after bracket fixtures are imported." />}
+      {!cards.length && <EmptyState text={`${activeStage.label} teams will appear here after bracket fixtures are imported.`} />}
     </section>
+  );
+}
+
+function StageBadge({ stage }) {
+  return (
+    <span className={`champion-stage-badge champion-stage-${stage.color || getChampionBonusStage(stage.key).color}`}>
+      <strong>{stage.shortLabel}</strong>
+      {stage.label}
+      <em>{stage.weight}x</em>
+    </span>
   );
 }
 
@@ -3682,6 +3721,14 @@ function ChampionBonusAdminPanel({
     () => calculateChampionBonus({ players, matches, picks: championPicks, tournament, publicOnly: true }),
     [players, matches, championPicks, tournament],
   );
+  const pickCountsByStage = useMemo(() => {
+    const counts = new Map();
+    championPicks.forEach((pick) => {
+      const stage = getChampionBonusStage(pick.stage_key);
+      counts.set(stage.key, (counts.get(stage.key) || 0) + 1);
+    });
+    return counts;
+  }, [championPicks]);
 
   useEffect(() => {
     setLockAt(toLocalInputValue(getChampionBonusLockAt(tournament, matches)));
@@ -3756,8 +3803,14 @@ function ChampionBonusAdminPanel({
         <span><strong>{bonus.pool}</strong> bonus pool</span>
         <span><strong>{bonus.pick_count}</strong> champion picks</span>
         <span><strong>{bonus.locked ? 'Locked' : 'Open'}</strong> status</span>
+        <span><strong>{bonus.openStage?.label || 'Unknown'}</strong> current stage</span>
         <span><strong>{cards.length}</strong> concrete teams</span>
         <span><strong>{bonus.champion?.name || 'Not set'}</strong> champion</span>
+      </div>
+      <div className="champion-stage-list">
+        {bonus.stages?.map((stage) => (
+          <StageBadge key={stage.key} stage={{ ...stage, label: `${stage.label}: ${pickCountsByStage.get(stage.key) || 0} picks` }} />
+        ))}
       </div>
       <div className="champion-admin-grid">
         <AdminInput label="Lock time" type="datetime-local" value={lockAt} onChange={setLockAt} />
@@ -4463,17 +4516,17 @@ function HelpPage({ navigate, routeBase }) {
           {
             question: 'How does Champion Bonus work?',
             answer:
-              'You choose one team to win the World Cup. You can change that team until the cutoff time shown on the Champion Bonus page. If you choose another team, it replaces your old champion pick. After the cutoff, champion picks are locked.',
+              'You have one active team picked to win the World Cup. You can change it while a Champion Bonus stage is open, but the new pick replaces the old one and uses the later stage weight. Round of 32 picks are worth 1x, Round of 16 picks 0.5x, quarter-final picks 0.25x, and semi-final picks 0.125x.',
           },
           {
             question: 'Why are some Champion Bonus teams not selectable?',
             answer:
-              'The app only lets you pick confirmed Round of 32 teams. If all 32 teams are not available yet, you can either pick from the teams already shown or wait for more teams to appear before the cutoff. Disabled TBD cards mean the matchup is not confirmed in the app yet.',
+              'The app only lets you pick confirmed teams for the currently open knockout stage. If the next round is not ready yet, you can wait for teams to appear before that stage cutoff. Disabled TBD cards mean the matchup is not confirmed in the app yet.',
           },
           {
             question: 'What is the Champion Bonus cutoff?',
             answer:
-              'The cutoff is shown on the Champion Bonus page. Use Add cutoff to calendar if you want a reminder. Once the cutoff passes, nobody can add or change a champion pick.',
+              'The cutoff is shown on the Champion Bonus page for the current stage. Use Add cutoff to calendar if you want a reminder. Once a stage cutoff passes, changing your pick later moves you to the next lower-weight stage.',
           },
           {
             question: 'Why is my name missing from the leaderboard?',
@@ -4653,7 +4706,7 @@ function formatDate(value) {
 }
 
 function downloadChampionBonusCalendar(tournament, matches = []) {
-  const lockAt = getChampionBonusLockAt(tournament, matches);
+  const lockAt = getChampionBonusStageStatus(tournament, matches).openStage?.cutoff || getChampionBonusLockAt(tournament, matches);
   const start = new Date(lockAt);
   if (Number.isNaN(start.getTime())) return;
   const end = new Date(start.getTime() + 15 * 60 * 1000);
